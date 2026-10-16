@@ -1,0 +1,39 @@
+source:
+  format: jsonl
+  encoding: utf-8
+  path: data/raw/sample_catalogue.jsonl
+
+fields:
+  product_id: ["product_id"]
+  title: ["title"]
+  description: ["description"]
+  category: ["category"]
+  price: ["price"]
+  currency: ["currency"]
+  rating: ["rating"]
+  rating_count: ["rating_count"]
+  stock: ["stock"]
+  attributes: ["attributes"]
+
+product_id_regex: "^[A-Za-z0-9_.-]{1,40}$"
+
+price:
+  thousands_separator: ","
+  decimal_separator: "."
+  strip_tokens: ["₹", "Rs.", "Rs", "INR"]
+  assume_currency: "INR"
+  allow_zero_price: false
+
+rating:
+  min: 0.0
+  max: 5.0
+
+stock:
+  value_map:
+    in_stock: IN_STOCK
+    out_of_stock: OUT_OF_STOCK
+    unknown: UNKNOWN
+  from_quantity: false
+
+attributes:
+  format: dict

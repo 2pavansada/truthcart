@@ -1,0 +1,37 @@
+aliases:
+  shoes: Footwear
+  shoe: Footwear
+  footwear: Footwear
+  sneakers: Footwear
+  boots: Footwear
+  loafers: Footwear
+  trainers: Footwear
+  clothes: Clothing
+  clothing: Clothing
+  apparel: Clothing
+  shirts: Clothing
+  shirt: Clothing
+  t-shirts: Clothing
+  t-shirt: Clothing
+  tee: Clothing
+  tees: Clothing
+  jeans: Clothing
+  denim: Clothing
+  electronics: Electronics
+  gadgets: Electronics
+  audio: Electronics
+  earbuds: Electronics
+  headphones: Electronics
+  speaker: Electronics
+  smartwatch: Electronics
+  charger: Electronics
+  accessories: Accessories
+  backpack: Accessories
+  bag: Accessories
+  wallet: Accessories
+  belt: Accessories
+  kitchen: Home & Kitchen
+  home: Home & Kitchen
+  flask: Home & Kitchen
+  bottle: Home & Kitchen
+  mug: Home & Kitchen

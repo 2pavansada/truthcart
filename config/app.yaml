@@ -1,0 +1,37 @@
+paths:
+  raw_catalogue: data/raw/sample_catalogue.jsonl
+  policy: data/raw/policy.txt
+  sqlite_db: data/build/truthcart.sqlite
+  manifest: data/build/build_manifest.json
+  build_report: data/build/build_report.json
+
+limits:
+  max_message_chars: 500
+  max_body_bytes: 16384
+  max_sessions: 1000
+  session_ttl_s: 1800
+
+results:
+  top_k_display: 5
+  clarify_max_options: 5
+  related_max: 3
+
+card_fields:
+  - price
+  - stock
+
+citation:
+  search_marker: SHOW
+  product_format: prod
+  policy_format: pol
+
+policy:
+  heading_strategy: numbered
+  topic_keywords:
+    returns: ["return", "refund", "exchange"]
+    shipping: ["shipping", "delivery", "dispatch", "cancellation"]
+    warranty: ["warranty", "guarantee", "defect"]
+
+cors:
+  origins:
+    - "*"

@@ -1,0 +1,13 @@
+# TruthCart AI -- Line ending normalisation
+# Store all text files with LF in the repository.
+# Git will convert to CRLF on Windows checkout automatically.
+
+* text=auto eol=lf
+
+# Explicitly mark binary files so Git never mangles them
+*.png  binary
+*.svg  binary
+*.ico  binary
+*.webp binary
+*.woff binary
+*.woff2 binary

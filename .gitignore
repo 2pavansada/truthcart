@@ -1,0 +1,56 @@
+# =============================================================================
+# TruthCart AI -- .gitignore
+# =============================================================================
+
+# --- Secrets and environment files ------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Generated database (re-create: python backend/scripts/build_index.py) --
+# The SQLite file and build artefacts are fully reproducible from data/raw/.
+# Committing a binary DB inflates history and causes merge conflicts.
+data/build/
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Node.js -----------------------------------------------------------------
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# --- Logs --------------------------------------------------------------------
+*.log
+
+# --- Operating system files --------------------------------------------------
+.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# --- IDEs and editors --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

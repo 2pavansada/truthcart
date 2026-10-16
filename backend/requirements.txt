@@ -1,0 +1,26 @@
+# TruthCart AI -- Python direct dependencies
+#
+# Install:  pip install -r requirements.txt
+# Python:   3.11+  (tested on 3.13.3)
+#
+# Only direct dependencies are listed here.
+# Transitive packages (starlette, anyio, pydantic-core, etc.)
+# are resolved and installed automatically by pip.
+
+# Web framework
+fastapi==0.143.2
+
+# ASGI server (run with: uvicorn app.main:app --reload)
+uvicorn==0.54.0
+
+# Data validation (Pydantic v2)
+pydantic==2.14.1
+
+# Configuration loader -- reads config/*.yaml
+PyYAML==6.0.3
+
+# Test dependencies
+# httpx is required by fastapi.testclient (used in test_milestone.py and tests/).
+# Note: starlette 1.8.0 prefers httpx2; upgrade when starlette drops httpx support.
+httpx==0.28.1
+pytest==8.3.3
