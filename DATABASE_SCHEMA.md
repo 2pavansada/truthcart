@@ -8,7 +8,7 @@
 2. **Identity errors quarantine the row; field errors null the field.** A product without a reliable ID or title cannot be cited and is quarantined. A bad price makes the price unavailable but the product remains.
 3. **Raw preserved.** The original record is stored as JSON (`raw_json`) for audit; the canonical columns are derived.
 4. **Reproducible build.** Same inputs + config + model ⇒ same IDs, same `content_digest`, same vector ID order.
-5. **Read-only at runtime.** The server opens SQLite with `mode=ro` and never writes.
+5. **Catalogue read-only at runtime.** The server opens the catalogue SQLite with `mode=ro` and never writes to it. Optional account/session data uses a separate runtime SQLite database and cannot rebuild or replace catalogue data.
 
 ## 2. Canonical product schema
 
@@ -269,6 +269,18 @@ flowchart LR
   "vectors": { "model_id": "…", "dim": 0, "n": 0, "vectors_sha256": "…", "ids_sha256": "…" } }
 ```
 At server start `verify_manifest` recomputes `content_digest` from the DB, and checks the vectors/ids hashes and the embedder `model_id`/`dim` against the manifest. Any mismatch ⇒ `INDEX_NOT_READY` (never silently serving a stale index).
+
+## 12. Optional account and session database
+
+The authentication store is a separate SQLite file configured by `TRUTHCART_AUTH_DB_PATH` (default `data/build/truthcart_auth.sqlite`). It is initialized with `CREATE TABLE IF NOT EXISTS` and does not modify the catalogue schema or data.
+
+| Table | Stored fields and purpose |
+|---|---|
+| `users` | Unique normalized email, display name, Argon2id password hash, creation time |
+| `sessions` | SHA-256 hash of a random opaque token, user ID, creation and expiry times |
+| `csrf_tokens` | SHA-256 hash of a random one-use token and expiry time |
+
+Plaintext passwords and raw session/CSRF tokens are not persisted. Catalogue read-only acceptance criteria continue to apply to the catalogue database; authentication writes are isolated to this separate file.
 
 ## 11. Acceptance criteria
 

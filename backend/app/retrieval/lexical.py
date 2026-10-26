@@ -43,30 +43,33 @@ class LexicalIndex:
                     pass
 
             # Fallback exact substring LIKE over title, description, category, attributes_text
-            pattern = f"%{clean_term}%"
-            cur.execute(
-                """
-                SELECT product_id
-                FROM products
-                WHERE LOWER(title) LIKE ?
-                   OR LOWER(description) LIKE ?
-                   OR LOWER(category) LIKE ?
-                   OR LOWER(attributes_text) LIKE ?
-                """,
-                (pattern, pattern, pattern, pattern),
-            )
-            results[term] = frozenset(r[0] for r in cur.fetchall())
+            try:
+                cur.execute(
+                    """
+                    SELECT product_id, title, description, category, attributes_text
+                    FROM products
+                    """
+                )
+                pattern = re.compile(r"(?<!\w)" + re.escape(clean_term) + r"(?!\w)", re.IGNORECASE)
+                matched = set()
+                for row in cur.fetchall():
+                    text = " ".join(str(value or "") for value in row[1:])
+                    if pattern.search(text):
+                        matched.add(row[0])
+                results[term] = frozenset(matched)
+            except Exception as exc:
+                raise LexicalError("full-catalogue term matching failed") from exc
 
         return results
 
     def rank(self, terms: Sequence[str], allowed: frozenset[str], k: int = 5) -> list[tuple[str, float]]:
         """Return allowed product_ids ranked by BM25 (or term match frequency), top k."""
         if not allowed or not terms:
-            return [(pid, 1.0) for pid in list(allowed)[:k]]
+            return [(pid, 1.0) for pid in sorted(allowed)[:k]]
 
         clean_terms = [re.sub(r"[^\w]", "", t).strip().lower() for t in terms if re.sub(r"[^\w]", "", t).strip()]
         if not clean_terms:
-            return [(pid, 1.0) for pid in list(allowed)[:k]]
+            return [(pid, 1.0) for pid in sorted(allowed)[:k]]
 
         cur = self.conn.cursor()
         if self.has_fts:
@@ -78,7 +81,7 @@ class LexicalIndex:
                     FROM products_fts f
                     JOIN products p ON p.pid = f.rowid
                     WHERE products_fts MATCH ?
-                    ORDER BY rank_score ASC
+                    ORDER BY rank_score ASC, p.product_id ASC
                     """,
                     (fts_expr,),
                 )
@@ -103,5 +106,5 @@ class LexicalIndex:
             score = float(hit_count)
             scored.append((pid, score))
 
-        scored.sort(key=lambda x: (x[1], x[0]), reverse=True)
+        scored.sort(key=lambda x: (-x[1], x[0]))
         return scored[:k]

@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_error_handlers
 from app.api.routes_chat import router as chat_router
+from app.api.routes_auth import router as auth_router
 from app.api.routes_health import router as health_router
 from app.api.routes_meta import router as meta_router
 from app.api.routes_policy import router as policy_router
@@ -13,6 +14,7 @@ from app.api.routes_products import router as products_router
 from app.container import build_container
 from app.orchestrator import Orchestrator
 from app.settings import Settings, load_settings
+from app.store.auth_store import AuthStore
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,6 +31,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     orchestrator = Orchestrator(container)
     app.state.container = container
     app.state.orchestrator = orchestrator
+    app.state.settings = settings
+    auth_db_path = Path(settings.auth.database_path)
+    if not auth_db_path.is_absolute():
+        auth_db_path = settings.base_dir / auth_db_path
+    app.state.auth_store = AuthStore(
+        auth_db_path,
+        session_ttl_seconds=settings.auth.session_ttl_seconds,
+        csrf_ttl_seconds=settings.auth.csrf_ttl_seconds,
+    )
 
     # Middleware: Request ID and timing
     @app.middleware("http")
@@ -54,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Mount API routers
     app.include_router(chat_router)
+    app.include_router(auth_router)
     app.include_router(products_router)
     app.include_router(policy_router)
     app.include_router(meta_router)

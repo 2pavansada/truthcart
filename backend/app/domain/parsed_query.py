@@ -31,3 +31,8 @@ class ParsedQuery:
     constraint_ops: tuple[ConstraintOp, ...] = ()
     this_turn_constraints: ConstraintSet = ConstraintSet()
     confidence: float = 1.0
+    additive_category_cue: bool = False
+    category_ambiguous: bool = False
+    available_ambiguous: bool = False
+    attribute_question: bool = False
+    unsupported_action: str | None = None

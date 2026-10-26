@@ -1,65 +1,57 @@
-# TruthCart AI — The Conversational Shopping Assistant That Doesn't Lie
+# TruthCart AI
 
-> **STATUS: DESIGN ONLY.** No application code exists. Nothing in this repository has been implemented, run, tested or benchmarked. Every command below marked *(planned)* is a specification, not a verified instruction. Every item in a "Day 1 verification" list is an unresolved question, not a fact.
+TruthCart is a local shopping-assistant prototype. It answers product and policy questions from a supplied demo catalogue and policy file, carries supported filters across turns, and asks or refuses when the request cannot be answered safely.
 
-## 1. What this is
+## Current demo scope
 
-A grounded shopping assistant over a fixed catalogue of 5,000 products and one plain-text policy document. It answers only from those two sources, cites every factual claim, asks for clarification when the question is ambiguous, and refuses when the evidence does not exist.
+- **31 products** in the current demo catalogue and **11 policy sections**. The planned 5,000-product catalogue is not the current dataset.
+- Lexical SQLite/FTS retrieval, rule-based query parsing, deterministic constraint handling, and template-generated responses.
+- Product facts and policy answers include source evidence. Product filters are enforced before result cards are returned.
+- Optional local signup/login uses a separate auth database; product shopping remains available to guests.
+- The application runs locally and does not require a paid API. Package installation may require network access.
+- Semantic retrieval, the official production catalogue, order placement, and payment processing are not implemented.
 
-The central design rule:
+The latest verified checks are recorded in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md). On 2026-10-18, the backend suite passed **310 tests**; the evaluation runner passed **30/30 active cases**, with **2 ordinary-path known gaps** still reported. The frontend suite passed **8 tests** and its production build succeeded. No latency or token-cost benchmark is claimed.
 
-> **The language model never supplies a fact.** Code retrieves and verifies facts. Templates (or, optionally, an instruction model constrained to rephrase them) turn facts into sentences. A validator rejects any sentence whose claims are not backed by evidence retrieved in the same turn.
+## Run the demo on Windows
 
-## 2. Document map
+Build the frontend first so FastAPI can serve its production bundle:
 
-| # | File | Read it for |
-|---|---|---|
-| 1 | `README.md` | This overview |
-| 2 | `docs/architecture.md` | Components, diagrams, stack decisions, degradation ladder, security, requirement traceability, unknowns register (UNK-xx) |
-| 3 | `docs/folder_structure.md` | Every directory/file, its responsibility and public interface; frontend specification |
-| 4 | `docs/API_SPEC.md` | Endpoints, JSON schemas, validation rules, error codes, examples |
-| 5 | `docs/DATABASE_SCHEMA.md` | Canonical product schema, ingestion/validation rules, SQLite DDL, index build, policy sections |
-| 6 | `docs/RAG_PIPELINE.md` | Retrieval comparison, the 11-step pipeline with module contracts, ranking, ambiguity, multi-turn state |
-| 7 | `docs/GROUNDING_AND_REFUSAL.md` | ANSWER/CLARIFY/REFUSE decision rules, claim types, validator rules, templates, prompt-injection defence |
-| 8 | `docs/EVALUATION_PLAN.md` | Official-evaluator integration, dev set, metrics, provisional score, latency/token/cost measurement |
-| 9 | `docs/TESTING_PLAN.md` | Test matrix, fixtures, LLM-independent factual tests, offline and malformed-output tests |
-| 10 | `docs/IMPLEMENTATION_PLAN.md` | MVP tiers, Day 1 checklist, 7-day plan for four people, integration checkpoints, milestones |
-
-## 3. MVP tiers (mandatory vs optional)
-
-| Tier | Contents | Status |
-|---|---|---|
-| **Tier 0** | Ingestion, SQLite + FTS5, rule-based query understanding, deterministic filters, decision engine, template responses, validator, chat API, basic UI | **Mandatory** |
-| **Tier 1** | Supplied embedding model, semantic retrieval, RRF fusion, ambiguity detection using fused ranking, multi-turn state | **Mandatory** |
-| **Tier 2** | Supplied instruction model *rephrases* pre-validated claims; falls back to templates on any validation failure | **Recommended; becomes mandatory if the hackathon rules require using the instruction model (UNK-13)** |
-| **Tier 3** | LLM fallback for constraint extraction, compare intent, ordinal references ("the second one"), FAISS/Chroma swap-in, extended Hinglish lexicon | Optional |
-
-The system must be demonstrable at Tier 0 by end of Day 3 (see fallback MVP in `IMPLEMENTATION_PLAN.md`).
-
-## 4. Planned quick start *(planned — unverified)*
-
-```bash
-# 1. Put the hackathon files under data/raw/ (never edit them)
-python backend/scripts/inspect_inputs.py            # Day 1: report what the files actually look like
-# 2. Fill config/catalogue_mapping.yaml from that report
-python backend/scripts/build_index.py               # ingest, validate, build SQLite + vectors + manifest
-uvicorn app.main:create_app --factory --port 8000   # run from backend/
-# Frontend (dev):  cd frontend && npm install && npm run dev
-# Frontend (offline demo): npm run build, then FastAPI serves frontend/dist
-python backend/scripts/run_eval.py --suite dev      # reproducible evaluation report
-pytest backend/tests
+```powershell
+Set-Location frontend
+npm ci
+npm run build
 ```
 
-## 5. Non-negotiable principles
+In a second PowerShell window, install and start the backend from the repository root:
 
-1. Every factual sentence carries ≥1 citation (product ID or policy section) that the validator has checked against this turn's evidence.
-2. Prices, stock, ratings and verified attributes come only from SQLite rows. Semantic similarity never establishes a fact.
-3. Missing data is reported as unavailable; it is never imputed.
-4. Ambiguity → CLARIFY. No evidence → REFUSE (scoped to "the supplied catalogue/policy"). Otherwise ANSWER.
-5. Core operation needs no network, no paid API, no cloud service.
-6. Hidden test answers are never hard-coded; a CI test enforces this.
-7. No feature is described as done until a test or measured run in the repository demonstrates it.
+```powershell
+Set-Location backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python scripts/build_index.py
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-## 6. Handing this to Google Antigravity
+Open <http://127.0.0.1:8000>. The API health endpoint is <http://127.0.0.1:8000/api/health> and readiness is <http://127.0.0.1:8000/api/ready>.
 
-Implement incrementally by milestone (M0 → M8 in `IMPLEMENTATION_PLAN.md`). Do not change the architecture or the schemas in `docs/` without recording the change in `docs/DECISIONS.md` and updating every affected document.
+For the exact judge-facing sequence, expected outcomes, and backup talking points, see [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md). The editable six-slide deck is [presentation/TruthCart_Hackathon_Pitch.pptx](presentation/TruthCart_Hackathon_Pitch.pptx).
+
+## Run checks
+
+From `backend/`:
+
+```powershell
+python -m pytest -q
+python -m eval.runner --suite dev
+```
+
+The evaluation report distinguishes active cases from known gaps. The requirement-coverage audit is separate: complete branch auditing needs run-scoped pytest evidence paired with the matching evaluation run ID. See `backend/eval/requirement_coverage.py` and the latest audit in `IMPLEMENTATION_STATUS.md`.
+
+## Source documents
+
+- [CONTRACTS.md](CONTRACTS.md) — product, conversation, and response contracts.
+- [GROUNDING_AND_REFUSAL.md](GROUNDING_AND_REFUSAL.md) — grounding, clarification, refusal, and validator requirements.
+- [EVALUATION_PLAN.md](EVALUATION_PLAN.md) and [TESTING_PLAN.md](TESTING_PLAN.md) — evaluation and test approach.
+- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — dated implementation and verification evidence.

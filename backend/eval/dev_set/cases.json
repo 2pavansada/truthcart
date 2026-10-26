@@ -1,0 +1,286 @@
+{
+  "_comment": "TruthCart AI dev-set evaluation cases (M-10). Expected outcomes are DERIVED FROM THE SPEC (GROUNDING_AND_REFUSAL.md D-01..D-17), never from observed model output. Cases tagged status='known_gap' mark specification branches that are not yet implemented end-to-end; they are reported honestly and are never counted as passing requirements. Data is the controlled demo catalogue (data/build/truthcart.sqlite).",
+  "cases": [
+    {
+      "case_id": "TC-D01-greeting",
+      "rules": ["D-01"],
+      "tags": ["non-factual", "positive"],
+      "turns": [{ "message": "hi" }],
+      "expected": { "decision": "ANSWER" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D01-help",
+      "rules": ["D-01"],
+      "tags": ["non-factual", "help", "positive"],
+      "turns": [{ "message": "help" }],
+      "expected": { "decision": "ANSWER", "exact_products": [] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D01-reset",
+      "rules": ["D-01"],
+      "tags": ["non-factual", "state", "multi-turn"],
+      "turns": [
+        { "message": "show me black shoes under 2000" },
+        { "message": "reset" }
+      ],
+      "expected": { "decision": "ANSWER", "exact_products": [] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D02-contradictory",
+      "rules": ["D-02"],
+      "tags": ["clarify", "contradiction", "boundary"],
+      "turns": [{ "message": "shoes under 100 over 500 rupees" }],
+      "expected": { "decision": "CLARIFY", "reason": "CONTRADICTORY_CONSTRAINTS" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D03-unresolved-reference",
+      "rules": ["D-03"],
+      "tags": ["clarify", "reference", "negative"],
+      "turns": [{ "message": "what is the price of it" }],
+      "expected": { "decision": "CLARIFY", "reason": "UNRESOLVED_REFERENCE" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D05-ambiguous-blue-running-shoe",
+      "rules": ["D-05"],
+      "tags": ["clarify", "ambiguity", "product-fact"],
+      "turns": [{ "message": "What is the price of the blue running shoe?" }],
+      "expected": { "decision": "CLARIFY", "reason": "AMBIGUOUS_PRODUCT" },
+      "rationale": "This PRODUCT_FACT query matches three blue running shoes equally, so D-05 requires clarification.",
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D14-unique-existence-match",
+      "rules": ["D-14"],
+      "tags": ["existence", "unique-match", "entity"],
+      "turns": [{ "message": "do you sell the RoadRun Men's Black Running Shoes" }],
+      "expected": { "decision": "ANSWER", "exact_products": ["SH-BLK-001"] },
+      "rationale": "This is an EXISTENCE query, not PRODUCT_FACT or PRODUCT_WARRANTY. D-05 does not apply. D-14 answers when a TITLE_OR_ATTR match exists; lexical membership and the parsed hard filters leave the single exact product SH-BLK-001.",
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D07-catalogue-absence",
+      "rules": ["D-07"],
+      "tags": ["refuse", "absence", "grounding", "safety"],
+      "turns": [{ "message": "do you sell red shoes" }],
+      "expected": { "decision": "REFUSE", "reason": "NO_CATALOGUE_MATCH", "expect_absence": true, "no_definitive_absence": false },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D07-unknown-explicit-id",
+      "rules": ["D-07"],
+      "tags": ["refuse", "absence", "explicit-id", "grounding", "safety"],
+      "turns": [{ "message": "price of ZZZ-999" }],
+      "expected": { "decision": "REFUSE", "reason": "NO_CATALOGUE_MATCH", "expect_absence": true, "no_definitive_absence": false },
+      "rationale": "An explicit product ID absent from the supplied catalogue must be refused with a zero-result lookup manifest.",
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D07-entity-resolution-none",
+      "rules": ["D-07"],
+      "tags": ["refuse", "absence", "entity-resolution", "grounding", "safety"],
+      "turns": [{ "message": "price of qzxvplmno" }],
+      "expected": { "decision": "REFUSE", "reason": "NO_CATALOGUE_MATCH", "expect_absence": true, "no_definitive_absence": false },
+      "rationale": "The query has no catalogue entity candidate; the full handler must ground its refusal in an exhaustive zero-result manifest.",
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D07-search-zero-verified",
+      "rules": ["D-07"],
+      "tags": ["refuse", "absence", "search", "grounding", "safety"],
+      "turns": [{ "message": "show me qzxvplmno" }],
+      "expected": { "decision": "REFUSE", "reason": "NO_CATALOGUE_MATCH", "expect_absence": true, "no_definitive_absence": false },
+      "rationale": "A complete catalogue search with zero verified exact results permits only a grounded, scoped absence refusal.",
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D08-field-missing-unknown-stock",
+      "rules": ["D-08"],
+      "tags": ["refuse", "field-missing", "stock", "unknown-value"],
+      "turns": [{ "message": "is SH-TRK-001 in stock" }],
+      "expected": { "decision": "REFUSE", "reason": "FIELD_MISSING" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D10-warranty-grounded",
+      "rules": ["D-10"],
+      "tags": ["answer", "warranty", "attribute", "grounding"],
+      "turns": [{ "message": "warranty of SH-WARR-2Y" }],
+      "expected": { "decision": "ANSWER", "must_include_products": ["SH-WARR-2Y"] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D11-out-of-scope",
+      "rules": ["D-11"],
+      "tags": ["refuse", "out-of-scope", "negative"],
+      "turns": [{ "message": "track my order" }],
+      "expected": { "decision": "REFUSE", "reason": "OUT_OF_SCOPE" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D11-order-action",
+      "rules": ["D-11"],
+      "tags": ["refuse", "unsupported-request", "order-action"],
+      "turns": [{ "message": "Please place an order for SH-BLK-001" }],
+      "expected": { "decision": "REFUSE", "reason": "UNSUPPORTED_REQUEST" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D11-payment-action",
+      "rules": ["D-11"],
+      "tags": ["refuse", "unsupported-request", "payment-action"],
+      "turns": [{ "message": "Please process a payment for SH-BLK-001" }],
+      "expected": { "decision": "REFUSE", "reason": "UNSUPPORTED_REQUEST" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D11-cancel-action",
+      "rules": ["D-11"],
+      "tags": ["refuse", "unsupported-request", "cancel-action"],
+      "turns": [{ "message": "Cancel my order for SH-BLK-001" }],
+      "expected": { "decision": "REFUSE", "reason": "UNSUPPORTED_REQUEST" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D11-personalized-advice",
+      "rules": ["D-11"],
+      "tags": ["refuse", "unsupported-request", "personalized-advice"],
+      "turns": [{ "message": "Give me personalized advice about which product is right for me" }],
+      "expected": { "decision": "REFUSE", "reason": "UNSUPPORTED_REQUEST" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D13-price-lookup",
+      "rules": ["D-13"],
+      "tags": ["answer", "product-fact", "price", "grounding"],
+      "turns": [{ "message": "price of SH-BLK-001" }],
+      "expected": { "decision": "ANSWER", "exact_products": ["SH-BLK-001"] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D13-multi-field",
+      "rules": ["D-13"],
+      "tags": ["answer", "product-fact", "price", "rating", "grounding"],
+      "turns": [{ "message": "price and rating of SH-BLK-001" }],
+      "expected": { "decision": "ANSWER", "exact_products": ["SH-BLK-001"] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D15-budget-search",
+      "rules": ["D-15"],
+      "tags": ["answer", "search", "hard-filter", "budget", "price-cap"],
+      "turns": [{ "message": "show me black shoes under 2000" }],
+      "expected": {
+        "decision": "ANSWER",
+        "hard_filters": { "category": "footwear", "price_max_minor": 200000 },
+        "must_include_products": ["SH-BLK-001", "SH-BLK-002", "SH-BLK-003"],
+        "must_exclude_products": ["SH-BLK-005"]
+      },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D15-budget-stock-carryover",
+      "rules": ["D-15"],
+      "tags": ["answer", "search", "hard-filter", "budget", "stock", "multi-turn", "carry-over"],
+      "turns": [
+        { "message": "show me black shoes under 2000" },
+        { "message": "only in stock" }
+      ],
+      "expected": {
+        "decision": "ANSWER",
+        "hard_filters": { "category": "footwear", "price_max_minor": 200000, "stock": "IN_STOCK" },
+        "must_include_products": ["SH-BLK-001", "SH-BLK-002", "SH-BLK-003"],
+        "must_exclude_products": ["SH-BLK-004", "SH-TRK-001", "SH-BLK-005"]
+      },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D16-policy-answer",
+      "rules": ["D-16"],
+      "tags": ["answer", "policy", "grounding"],
+      "turns": [{ "message": "what is the shipping time" }],
+      "expected": { "decision": "ANSWER", "exact_products": [] },
+      "status": "active"
+    },
+
+    {
+      "case_id": "TC-D04-under-specified",
+      "rules": ["D-04"],
+      "tags": ["clarify", "under-specified", "routing"],
+      "turns": [{ "message": "i want to buy something" }],
+      "expected": { "decision": "CLARIFY", "reason": "UNDER_SPECIFIED_QUERY" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D06-ambiguous-policy-topic",
+      "rules": ["D-06"],
+      "tags": ["clarify", "policy", "ambiguity", "routing"],
+      "turns": [{ "message": "what's your policy?" }],
+      "expected": { "decision": "CLARIFY", "reason": "AMBIGUOUS_POLICY_TOPIC" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D08-null-price",
+      "rules": ["D-08"],
+      "tags": ["refuse", "field-missing", "null-price", "template-zero-trip"],
+      "turns": [{ "message": "price of SH-NOP-001" }],
+      "expected": { "decision": "REFUSE", "reason": "FIELD_MISSING" },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D08b-partial-fields",
+      "rules": ["D-08b"],
+      "tags": ["answer", "field-missing", "partial", "null-price", "template-zero-trip"],
+      "turns": [{ "message": "price and rating of SH-NOP-001" }],
+      "expected": { "decision": "ANSWER", "exact_products": ["SH-NOP-001"] },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D09-policy-not-established",
+      "rules": ["D-09"],
+      "tags": ["refuse", "policy", "absence", "grounding", "routing"],
+      "turns": [{ "message": "what is your price match policy" }],
+      "expected": { "decision": "REFUSE", "reason": "POLICY_NOT_ESTABLISHED", "expect_absence": true },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D10-warranty-silent",
+      "rules": ["D-10"],
+      "tags": ["refuse", "warranty", "field-missing", "template-zero-trip", "g-ac-07"],
+      "turns": [{ "message": "warranty of CL-JNS-001" }],
+      "expected": { "decision": "REFUSE", "reason": "FIELD_MISSING" },
+      "status": "active",
+      "gap_note": "D-10's required REFUSE FIELD_MISSING behaviour now works end-to-end. The OPTIONAL 'clearly-labelled general-policy quote' addition to the refusal (GROUNDING_AND_REFUSAL D-10) is deliberately NOT implemented and is not required by the contract; it remains an unimplemented optional branch."
+    },
+    {
+      "case_id": "TC-D12-validator-reject",
+      "rules": ["D-12"],
+      "tags": ["refuse", "internal-validation-failure", "post-condition", "known-gap"],
+      "turns": [{ "message": "price of SH-BLK-001" }],
+      "expected": { "decision": "ANSWER" },
+      "status": "known_gap",
+      "gap_note": "D-12 (validator rejects the final draft in template mode -> REFUSE INTERNAL_VALIDATION_FAILURE) is a safety net that is only reached when the validator rejects an otherwise-planned draft. In a correct template-mode pipeline it must NEVER fire -- that is precisely G-AC-03 (zero trips) -- so it cannot have a non-tripping end-to-end trigger on the dev catalogue. It is covered by a decision-layer unit test (test_decision_engine.py::test_d12_missing_search_falls_back_to_safe_refusal) and, before the V-11 FIELD_UNAVAILABLE fix, it was reached end-to-end only as a side effect of that template bug. Reported honestly as an e2e-coverage gap, not a passing requirement."
+    },
+    {
+      "case_id": "TC-D14-existence-desc-only",
+      "rules": ["D-14"],
+      "tags": ["answer", "existence", "nf-14", "description-quote", "grounding"],
+      "turns": [{ "message": "do you sell memory foam" }],
+      "expected": { "decision": "ANSWER", "exact_products": [], "no_definitive_absence": true },
+      "status": "active"
+    },
+    {
+      "case_id": "TC-D17-insufficient-evidence",
+      "rules": ["D-17"],
+      "tags": ["post-condition", "refuse", "known-gap"],
+      "turns": [{ "message": "price of SH-BLK-001" }],
+      "expected": { "decision": "ANSWER" },
+      "status": "known_gap",
+      "gap_note": "D-17 (drop claims lacking evidence; refuse INSUFFICIENT_EVIDENCE when nothing remains) is a post-planning safety net that is not reachable through a normal end-to-end message with a well-formed catalogue. It is covered by decision-layer unit tests (test_decision_engine.py); no e2e trigger exists in template mode, so it is reported as a coverage gap rather than an end-to-end pass."
+    }
+  ]
+}

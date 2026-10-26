@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 from typing import Any
 from app.container import Container
 from app.conversation.merger import merge
@@ -80,6 +81,23 @@ class Orchestrator:
                         this_turn_constraints=ConstraintSet(),
                         confidence=1.0,
                     )
+                elif chosen_opt.policy_topic:
+                    # D-06: the user picked a policy topic; replay the stored
+                    # policy query resolved to that topic (no re-parsing).
+                    base = pending.parsed
+                    parsed = base.__class__(
+                        original=base.original,
+                        normalized=base.normalized,
+                        intent=Intent.POLICY,
+                        requested_fields=(),
+                        product_ids=(),
+                        entity_terms=(),
+                        references_focus=False,
+                        policy_topic=chosen_opt.policy_topic,
+                        constraint_ops=base.constraint_ops,
+                        this_turn_constraints=base.this_turn_constraints,
+                        confidence=1.0,
+                    )
             state.pending = None
 
         # 4. Parse query if not already resolved
@@ -93,6 +111,21 @@ class Orchestrator:
                 settings=self.container.settings,
                 product_repo=self.container.product_repo,
             )
+
+        # Use only the immediately established conversational context to resolve
+        # an otherwise ambiguous "available" follow-up.
+        if parsed.available_ambiguous and state.availability_context == "stock":
+            parsed = replace(parsed, available_ambiguous=False)
+        elif parsed.available_ambiguous and state.availability_context == "catalogue":
+            parsed = replace(
+                parsed,
+                intent=Intent.EXISTENCE,
+                entity_terms=state.availability_terms,
+                references_focus=False,
+                available_ambiguous=False,
+            )
+        elif parsed.available_ambiguous and state.availability_context == "attribute":
+            parsed = replace(parsed, available_ambiguous=False)
 
         # 5. Merge constraint ops (from text + client UI request)
         rec.start_stage("merge")
@@ -108,7 +141,7 @@ class Orchestrator:
         merge_res = merge(
             state.constraints,
             all_ops,
-            additive_cue=True,
+            additive_cue=parsed.additive_category_cue,
             vocab=self.container.vocab,
         )
 
@@ -132,7 +165,16 @@ class Orchestrator:
 
         else:
             # Check for ambiguity on entity terms if asking about a specific item
-            if parsed.intent in (Intent.PRODUCT_FACT, Intent.EXISTENCE) and parsed.entity_terms:
+            should_resolve_entity = parsed.intent in (
+                Intent.PRODUCT_FACT,
+                Intent.PRODUCT_WARRANTY,
+                Intent.EXISTENCE,
+            ) and bool(parsed.entity_terms)
+            if parsed.intent == Intent.PRODUCT_WARRANTY and state.focus_product_id:
+                # A focused product is already the trusted warranty subject; the
+                # generic "warranty" token must not turn it into an entity tie.
+                should_resolve_entity = False
+            if should_resolve_entity:
                 entity_res = self.container.retriever.resolve_entity(
                     parsed.intent,
                     parsed.entity_terms,
@@ -177,7 +219,15 @@ class Orchestrator:
 
         # 9. Validation stage
         rec.start_stage("validate")
-        val_report = self.container.validator.validate(draft, digest)
+        try:
+            val_report = self.container.validator.validate(draft, digest)
+        except Exception as exc:
+            print(f"Validator exception in turn {turn_id}: {exc}")
+            from app.domain.plans import ValidationReport, Violation
+            val_report = ValidationReport(
+                ok=False,
+                violations=(Violation(rule="V-12", claim_id=None, detail=str(exc)),),
+            )
 
         if not val_report.ok:
             rec.record_trip()
@@ -199,6 +249,21 @@ class Orchestrator:
         state.constraints = plan.state_update.constraints_to_persist
         state.focus_product_id = plan.state_update.focus_product_id
         state.last_result_ids = plan.state_update.last_result_ids
+        if parsed.available_ambiguous:
+            # Keep prior semantic context when asking the user to disambiguate.
+            pass
+        elif any(op.key == "stock" and op.op == OpKind.SET for op in parsed.constraint_ops):
+            state.availability_context = "stock"
+            state.availability_terms = ()
+        elif parsed.intent == Intent.EXISTENCE:
+            state.availability_context = "catalogue"
+            state.availability_terms = parsed.entity_terms
+        elif parsed.attribute_question and parsed.this_turn_constraints.attributes:
+            state.availability_context = "attribute"
+            state.availability_terms = ()
+        else:
+            state.availability_context = None
+            state.availability_terms = ()
         if plan.clarification:
             state.pending = PendingClarification(
                 clarification_id=draft.clarification.clarification_id,

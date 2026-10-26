@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from typing import Any, Sequence
 from app.decision.claim_planner import plan_product_fact_claims, plan_summary_claim
 from app.domain.constraints import ConstraintOp, ConstraintSet
@@ -35,6 +36,83 @@ from app.schemas.chat import ConstraintOpIn
 from app.settings import Settings
 from app.store.product_repo import Product, ProductRepo
 
+# Terms that carry no product-search signal for D-04. An under-specified browse
+# ("i want to buy something") names only these; a concrete-but-absent query
+# ("quantum widgets") names content words and must fall through to D-07 so we
+# report a grounded absence rather than wrongly asking the user to clarify.
+# This list is deliberately scoped to the D-04 routing rule only.
+_GENERIC_BROWSE_TERMS = frozenset({
+    "buy", "want", "need", "like", "looking", "show", "see", "browse", "shop",
+    "shopping", "something", "anything", "everything", "nothing", "stuff",
+    "thing", "things", "item", "items", "product", "products", "gift", "nice",
+    "good", "great", "cool", "best", "new", "popular", "trending", "interesting",
+    "any", "some", "few", "me", "you", "your", "please", "recommend",
+    "recommendation", "suggestion", "suggestions", "deal", "deals", "offer",
+    "offers", "available", "there", "options", "choice", "choices",
+})
+
+
+def _has_search_signal(entity_terms: Sequence[str], repo: ProductRepo) -> bool:
+    """True if any term names a real catalogue dimension or a concrete product
+    word (i.e. anything other than generic browse filler)."""
+    vocab = repo.vocab()
+    return any(
+        vocab.has_term(t) or t.lower() not in _GENERIC_BROWSE_TERMS
+        for t in entity_terms
+    )
+
+
+# Words that V-11 requires be backed by STOCK/RATING evidence on the *same*
+# claim. A verbatim description quote is data, so a sentence that happens to use
+# one of them is skipped rather than quoted -- we never want a template-mode
+# validator trip, and we never invent a stock/rating assertion to justify it.
+_QUOTE_UNSAFE_WORDS_RE = re.compile(
+    r"\b(?:in stock|out of stock|sold out|available|unavailable|rated|rating|ratings)\b",
+    re.IGNORECASE,
+)
+
+
+def _term_matches(term: str, text: str | None) -> bool:
+    """Whole-word containment on the same token normalisation the lexical ranker
+    uses (strip punctuation, word boundaries), so a query term counting as a
+    title/attribute hit is decided by the trusted record, not by retrieval."""
+    clean = re.sub(r"[^\w]", "", term or "").lower()
+    if not clean:
+        return False
+    return re.search(r"\b" + re.escape(clean) + r"\b", (text or "").lower()) is not None
+
+
+def _product_title_attr_hit(prod: Product, attr_rows: list[dict[str, Any]], terms: Sequence[str]) -> bool:
+    """True if any query term appears in the product's title, category or a
+    structured attribute value (a real 'titled this' match)."""
+    for t in terms:
+        if _term_matches(t, prod.title) or _term_matches(t, prod.category):
+            return True
+        for a in attr_rows:
+            if _term_matches(t, a.get("value_raw")) or _term_matches(t, a.get("value_norm")):
+                return True
+    return False
+
+
+def _pick_description_quote(prod: Product, terms: Sequence[str]) -> str | None:
+    """Return the first verbatim description sentence containing a query term that
+    is free of stock/rating words, else None. The returned text is an exact
+    substring of ``prod.description`` so V-03 (verbatim quote) holds."""
+    if not prod.description:
+        return None
+    for sentence in re.split(r"(?<=[.!?])\s+", prod.description):
+        s = sentence.strip()
+        if not s:
+            continue
+        if not any(_term_matches(t, s) for t in terms):
+            continue
+        if _QUOTE_UNSAFE_WORDS_RE.search(s):
+            continue
+        # Re-anchor to the original description to guarantee a verbatim substring.
+        if s in prod.description:
+            return s
+    return None
+
 
 @dataclass(frozen=True)
 class DecisionContext:
@@ -51,6 +129,84 @@ class DecisionContext:
 
 
 def decide(ctx: DecisionContext) -> DecisionPlan:
+    """Apply the decision rules, then the D-17 claim-grounding post-condition.
+
+    ``_decide_core`` selects the decision and plans claims; ``decide`` then drops
+    any planned claim that lacks evidence or a value (D-17) so an ungrounded fact
+    can never silently reach the user as an answer.
+    """
+    return enforce_claim_grounding(_decide_core(ctx))
+
+
+def enforce_claim_grounding(plan: DecisionPlan) -> DecisionPlan:
+    """D-17: after claim planning, drop any claim that lacks evidence or a value.
+
+    A claim is only kept when it carries >=1 evidence id (V-01) and a non-null
+    typed value. Dropped claims and their answer-text segments are removed; a
+    suggestion whose claim was dropped is removed too. If an ANSWER loses every
+    planned claim, it is downgraded to a fact-free REFUSE with reason
+    ``INSUFFICIENT_EVIDENCE`` -- a missing citation must not become a definitive
+    answer. Answers that never planned claims (pure non-factual templates such as
+    GREETING/HELP/RESET) and refusals/clarifications are left unchanged.
+    """
+    if not plan.claim_specs:
+        return plan
+
+    kept = [c for c in plan.claim_specs if c.evidence_ids and c.value is not None]
+    if len(kept) == len(plan.claim_specs):
+        return plan  # every planned claim is grounded
+
+    kept_ids = {c.claim_id for c in kept}
+
+    # Nothing grounded remains for a factual answer -> safe, fact-free refusal.
+    if plan.decision == Decision.ANSWER and not kept:
+        return DecisionPlan(
+            decision=Decision.REFUSE,
+            intent=plan.intent,
+            reason=RefusalReason.INSUFFICIENT_EVIDENCE,
+            segments=(SegmentNF(kind="NF-13"),),
+            claim_specs=(),
+            card_specs=(),
+            clarification=None,
+            suggestions=(),
+            manifests=plan.manifests,
+            constraints_after=plan.constraints_after,
+            state_update=plan.state_update,
+            warnings=plan.warnings,
+        )
+
+    segments = tuple(
+        s for s in plan.segments
+        if not isinstance(s, SegmentClaim) or s.claim_id in kept_ids
+    )
+    kept_suggs = tuple(s for s in plan.suggestions if s[0] in kept_ids)
+    # Product cards are product-scoped in both models: ClaimSpec.product_id
+    # identifies the product supporting a claim, and CardSpec.product_id
+    # identifies the product whose card is rendered. Keep a card only when
+    # at least one surviving claim still supports that product. This is an
+    # explicit ID association, not an assumed positional relationship.
+    kept_product_ids = {claim.product_id for claim in kept if claim.product_id}
+    kept_cards = tuple(
+        card for card in plan.card_specs if card.product_id in kept_product_ids
+    )
+
+    return DecisionPlan(
+        decision=plan.decision,
+        intent=plan.intent,
+        reason=plan.reason,
+        segments=segments,
+        claim_specs=tuple(kept),
+        card_specs=kept_cards,
+        clarification=plan.clarification,
+        suggestions=kept_suggs,
+        manifests=plan.manifests,
+        constraints_after=plan.constraints_after,
+        state_update=plan.state_update,
+        warnings=plan.warnings,
+    )
+
+
+def _decide_core(ctx: DecisionContext) -> DecisionPlan:
     parsed = ctx.parsed
     merge_res = ctx.merge_res
     state_before = ctx.state_before
@@ -60,6 +216,8 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
     warnings: list[WarningCode] = []
     if merge_res.carried_over:
         warnings.append(WarningCode.CONSTRAINTS_CARRIED_OVER)
+    if any(item.kind == "SPELLFIX" for item in parsed.normalized.trace):
+        warnings.append(WarningCode.SPELLING_CORRECTED)
 
     claim_counter = [0]
     planned_claims: list[ClaimSpec] = []
@@ -72,7 +230,13 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
 
     # D-01: GREETING_HELP or RESET
     if parsed.intent == Intent.GREETING_HELP:
-        segments.append(SegmentNF(kind="NF-01"))
+        first_token = parsed.normalized.text.casefold().strip().split(maxsplit=1)[:1]
+        template = (
+            "NF-02"
+            if first_token and first_token[0].strip(".,?!;:-") == "help"
+            else "NF-01"
+        )
+        segments.append(SegmentNF(kind=template))
         return DecisionPlan(
             decision=Decision.ANSWER,
             intent=Intent.GREETING_HELP,
@@ -115,11 +279,24 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
 
     # D-11: OUT_OF_SCOPE / unsupported
     if parsed.intent == Intent.OUT_OF_SCOPE:
-        segments.append(SegmentNF(kind="NF-09"))
+        is_unsupported_action = parsed.unsupported_action is not None
+        # NF-10 names the known order/payment limitations. Other unsupported
+        # D-11 actions use the generic fact-free scope refusal, not a policy
+        # answer or a claim about capabilities outside the contract.
+        template = (
+            "NF-10"
+            if parsed.unsupported_action in {"order", "payment"}
+            else "NF-09"
+        )
+        segments.append(SegmentNF(kind=template))
         return DecisionPlan(
             decision=Decision.REFUSE,
             intent=Intent.OUT_OF_SCOPE,
-            reason=RefusalReason.OUT_OF_SCOPE,
+            reason=(
+                RefusalReason.UNSUPPORTED_REQUEST
+                if is_unsupported_action
+                else RefusalReason.OUT_OF_SCOPE
+            ),
             segments=tuple(segments),
             claim_specs=(),
             card_specs=(),
@@ -179,7 +356,19 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
         )
 
     # D-03: Unresolved reference ("it", "this", "that") with no focus product
-    if parsed.references_focus and not state_before.focus_product_id and parsed.intent != Intent.SEARCH:
+    availability_followup_resolved = (
+        state_before.availability_context is not None
+        and "available" in parsed.normalized.text.lower()
+    )
+    # Dedicated availability/attribute questions keep their established routes;
+    # this branch handles only a generic unresolved product reference.
+    if (
+        parsed.references_focus
+        and not state_before.focus_product_id
+        and not parsed.available_ambiguous
+        and not parsed.attribute_question
+        and not availability_followup_resolved
+    ):
         segments.append(SegmentNF(kind="NF-05"))
         opts = []
         if state_before.last_result_ids:
@@ -215,6 +404,75 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
             ),
             warnings=tuple(warnings),
         )
+
+    # D-14 (DESCRIPTION_ONLY branch): An EXISTENCE query whose search candidates
+    # mention the query terms ONLY inside product descriptions -- never in a title,
+    # category or structured attribute value -- is answered with the non-factual
+    # NF-14 lead-in plus verbatim DESCRIPTION_QUOTE claims. No RESULT_COUNT /
+    # PRODUCT_EXISTS claim is planned, because a description mention does not
+    # establish that a product is *titled* this. It runs before D-05 so a genuine
+    # description-only mention is not mis-routed into an ambiguity clarification,
+    # and it is skipped (falling through to the normal D-05 / D-14-primary path)
+    # whenever any candidate carries a real title/attribute hit or no clean, safely
+    # quotable description sentence exists (contract fallback, never a fabrication).
+    if (
+        parsed.intent == Intent.EXISTENCE
+        and parsed.entity_terms
+        and ctx.search
+        and ctx.search.ranked
+    ):
+        terms = tuple(parsed.entity_terms)
+        ranked_ids = [c.product_id for c in ctx.search.ranked]
+        products_map = repo.get_many(ranked_ids)
+        title_attr_present = False
+        desc_quotes: list[tuple[Product, str]] = []
+        for cid in ranked_ids:
+            prod = products_map.get(cid)
+            if not prod:
+                continue
+            if _product_title_attr_hit(prod, repo.attributes(prod.product_id), terms):
+                title_attr_present = True
+                break
+            quote = _pick_description_quote(prod, terms)
+            if quote is not None:
+                desc_quotes.append((prod, quote))
+
+        if not title_attr_present and desc_quotes:
+            segments.append(SegmentNF(kind="NF-14"))
+            for prod, quote in desc_quotes:
+                claim_counter[0] += 1
+                dq_cid = f"c{claim_counter[0]}"
+                dq_claim = ClaimSpec(
+                    claim_id=dq_cid,
+                    type=ClaimType.DESCRIPTION_QUOTE,
+                    scope=ClaimScope.PRODUCT,
+                    product_id=prod.product_id,
+                    value={"quote": quote},
+                    evidence_ids=(
+                        f"prod:{prod.product_id}:description",
+                        f"prod:{prod.product_id}:title",
+                    ),
+                )
+                planned_claims.append(dq_claim)
+                segments.append(SegmentClaim(dq_cid))
+            return DecisionPlan(
+                decision=Decision.ANSWER,
+                intent=Intent.EXISTENCE,
+                reason=None,
+                segments=tuple(segments),
+                claim_specs=tuple(planned_claims),
+                card_specs=(),
+                clarification=None,
+                suggestions=(),
+                manifests=(),
+                constraints_after=merge_res.constraints,
+                state_update=StateUpdate(
+                    focus_product_id=state_before.focus_product_id,
+                    last_result_ids=state_before.last_result_ids,
+                    constraints_to_persist=merge_res.constraints,
+                ),
+                warnings=tuple(warnings),
+            )
 
     # D-05: Entity resolution ambiguous
     if ctx.entity and ctx.entity.kind == "AMBIGUOUS":
@@ -260,6 +518,47 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
         pol_res = ctx.policy
         if pol_res:
             manifests.append(pol_res.manifest)
+            # D-06: POLICY with no determinable topic on a generic question ->
+            # clarify the policy topics that exist rather than refuse as
+            # unsupported (only when there is at least one topic to offer).
+            if (
+                not pol_res.established
+                and parsed.policy_topic is None
+                and pol_res.available_topics
+            ):
+                segments.append(SegmentNF(kind="NF-08"))
+                max_opts = ctx.settings.thresholds.clarify_max_options
+                opts = tuple(
+                    OptionSpec(
+                        option_id=f"opt_topic_{i}",
+                        kind="POLICY_TOPIC",
+                        label=t.replace("_", " ").capitalize(),
+                        policy_topic=t,
+                    )
+                    for i, t in enumerate(pol_res.available_topics[:max_opts])
+                )
+                clarification = ClarificationSpec(
+                    reason=ClarifyReason.AMBIGUOUS_POLICY_TOPIC,
+                    options=opts,
+                )
+                return DecisionPlan(
+                    decision=Decision.CLARIFY,
+                    intent=Intent.POLICY,
+                    reason=ClarifyReason.AMBIGUOUS_POLICY_TOPIC,
+                    segments=tuple(segments),
+                    claim_specs=(),
+                    card_specs=(),
+                    clarification=clarification,
+                    suggestions=(),
+                    manifests=tuple(manifests),
+                    constraints_after=merge_res.constraints,
+                    state_update=StateUpdate(
+                        focus_product_id=state_before.focus_product_id,
+                        last_result_ids=state_before.last_result_ids,
+                        constraints_to_persist=merge_res.constraints,
+                    ),
+                    warnings=tuple(warnings),
+                )
             if not pol_res.established:
                 # D-09: REFUSE POLICY_NOT_ESTABLISHED
                 claim_counter[0] += 1
@@ -333,7 +632,16 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
 
     # PRODUCT_WARRANTY Intent handling
     if parsed.intent == Intent.PRODUCT_WARRANTY:
-        target_pid = parsed.product_ids[0] if parsed.product_ids else state_before.focus_product_id
+        resolved_entity_pid = (
+            ctx.entity.candidates[0].product_id
+            if ctx.entity and ctx.entity.kind == "RESOLVED" and ctx.entity.candidates
+            else None
+        )
+        target_pid = (
+            parsed.product_ids[0]
+            if parsed.product_ids
+            else state_before.focus_product_id or resolved_entity_pid
+        )
         prod = repo.get(target_pid) if target_pid else None
         if prod:
             attrs = repo.attributes(prod.product_id)
@@ -521,9 +829,29 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
 
     manifests.append(search_res.manifest)
 
-    # D-04: Under-specified query check
-    if merge_res.constraints.is_empty() and not parsed.entity_terms and not parsed.original.strip():
-        segments.append(SegmentNF(kind="NF-06"))
+    # D-04: Under-specified query. A SEARCH with no hard constraint and no search
+    # term carrying a real search signal (a catalogue lexical hit or a concrete
+    # product word) is an unconstrained browse -- clarify the request (NF-06)
+    # instead of answering with a default result set. A concrete-but-absent query
+    # ("quantum widgets") does carry a search signal, so it is left to fall through
+    # to D-07 for a grounded absence rather than being mis-routed to a clarification.
+    # UNKNOWN with no extracted content is also under-specified per RAG_PIPELINE
+    # §3; UNKNOWN with content is converted to SEARCH by parse_query. Product,
+    # existence, and policy routes remain independent.
+    _under_spec_search = (
+        parsed.intent in (Intent.SEARCH, Intent.UNKNOWN)
+        and (
+            parsed.category_ambiguous
+            or parsed.available_ambiguous
+            or parsed.intent == Intent.UNKNOWN
+            or (
+                merge_res.constraints.is_empty()
+                and not _has_search_signal(parsed.entity_terms, repo)
+            )
+        )
+    )
+    if _under_spec_search:
+        segments.append(SegmentNF(kind="NF-15" if parsed.available_ambiguous else "NF-06"))
         clarification = ClarificationSpec(
             reason=ClarifyReason.UNDER_SPECIFIED_QUERY,
             options=(),
@@ -547,7 +875,33 @@ def decide(ctx: DecisionContext) -> DecisionPlan:
             warnings=tuple(warnings),
         )
 
-    # D-07: Search produces 0 exact matches -> REFUSE NO_CATALOGUE_MATCH with ABSENCE claim
+    # Incomplete search must not produce an ABSENCE claim (CONTRACTS §1 completeness).
+    if (
+        search_res.manifest.completeness == Completeness.INCOMPLETE
+        and len(search_res.exact_ids) == 0
+    ):
+        warnings.append(WarningCode.SEARCH_INCOMPLETE)
+        segments.append(SegmentNF(kind="NF-13"))
+        return DecisionPlan(
+            decision=Decision.REFUSE,
+            intent=parsed.intent,
+            reason=RefusalReason.SEARCH_INCOMPLETE,
+            segments=tuple(segments),
+            claim_specs=(),
+            card_specs=(),
+            clarification=None,
+            suggestions=(),
+            manifests=tuple(manifests),
+            constraints_after=merge_res.constraints,
+            state_update=StateUpdate(
+                focus_product_id=state_before.focus_product_id,
+                last_result_ids=state_before.last_result_ids,
+                constraints_to_persist=merge_res.constraints,
+            ),
+            warnings=tuple(warnings),
+        )
+
+    # D-07: Exhaustive search with 0 exact matches -> REFUSE NO_CATALOGUE_MATCH + ABSENCE
     if len(search_res.exact_ids) == 0:
         claim_counter[0] += 1
         cid = f"c{claim_counter[0]}"

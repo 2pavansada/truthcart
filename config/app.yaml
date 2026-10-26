@@ -2,6 +2,7 @@ paths:
   raw_catalogue: data/raw/sample_catalogue.jsonl
   policy: data/raw/policy.txt
   sqlite_db: data/build/truthcart.sqlite
+  auth_db: data/build/truthcart_auth.sqlite
   manifest: data/build/build_manifest.json
   build_report: data/build/build_report.json
 
@@ -34,4 +35,10 @@ policy:
 
 cors:
   origins:
-    - "*"
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+auth:
+  session_ttl_seconds: 604800
+  csrf_ttl_seconds: 900
+  cookie_secure: false

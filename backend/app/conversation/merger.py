@@ -17,7 +17,7 @@ def merge(
     current: ConstraintSet,
     ops: Sequence[ConstraintOp],
     *,
-    additive_cue: bool = True,
+    additive_cue: bool = False,
     vocab: CatalogueVocab | None = None,
 ) -> MergeResult:
     categories = set(current.categories)
@@ -31,6 +31,7 @@ def merge(
 
     carried_over = False
     conflicts: list[Conflict] = []
+    saw_user_category = False
 
     for op in ops:
         if op.op == OpKind.RESET or op.key == "all":
@@ -57,8 +58,14 @@ def merge(
 
         elif op.op == OpKind.ADD:
             if op.key == "category":
-                # If changing to an entirely new category and additive_cue is False, could replace;
-                # but standard ADD expands or sets category
+                # A text-requested category replaces the prior OR set by default.
+                # Explicit category cues preserve the set; multiple category ADDs in
+                # this same turn then form the requested OR alternatives. UI ADDs
+                # keep their explicit operation semantics.
+                if op.origin == "USER_TEXT" and not saw_user_category:
+                    if not additive_cue:
+                        categories.clear()
+                    saw_user_category = True
                 cat_norm = str(op.value).lower().strip()
                 categories.add(cat_norm)
             elif op.key == "attribute":

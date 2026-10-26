@@ -136,4 +136,8 @@ def render_nf(kind: str, params: Mapping[str, Any] | None = None) -> str:
         return f"Still applying: {cs}."
     elif kind == "NF-13":
         return "I couldn't produce a verified answer to that. Please try rephrasing."
+    elif kind == "NF-14":
+        return "No product is titled this, but a description mentions it:"
+    elif kind == "NF-15":
+        return "Do you mean whether it is listed in the catalogue or currently in stock?"
     return ""

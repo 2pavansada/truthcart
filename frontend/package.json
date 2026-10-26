@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node --experimental-strip-types --test tests/searchEvidence.test.mjs tests/authValidation.test.mjs tests/authApi.test.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

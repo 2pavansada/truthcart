@@ -8,9 +8,22 @@ def analyze_relaxations(
     spec: SearchSpec,
     product_repo: ProductRepo,
     verify_func,
+    terms=(),
+    term_hits=None,
+    term_min_coverage: float = 0.67,
 ) -> list[Relaxation]:
     relaxations = []
     c = spec.constraints
+
+    def term_covered(product_id: str) -> bool:
+        if not terms:
+            return True
+        if term_hits is None:
+            return False
+        coverage = sum(
+            product_id in term_hits.get(term, frozenset()) for term in terms
+        ) / len(terms)
+        return coverage >= term_min_coverage
 
     # 1. Try dropping stock
     if c.stock is not None:
@@ -25,7 +38,10 @@ def analyze_relaxations(
             sort=c.sort,
         )
         eligible = product_repo.eligible_ids(c_no_stock)
-        matches = [pid for pid in eligible.ids if verify_func(pid, c.attributes)]
+        matches = [
+            pid for pid in eligible.ids
+            if term_covered(pid) and verify_func(pid, c.attributes)
+        ]
         if len(matches) > 0:
             relaxations.append(Relaxation(
                 dropped="stock",
@@ -46,7 +62,10 @@ def analyze_relaxations(
             sort=c.sort,
         )
         eligible = product_repo.eligible_ids(c_no_price)
-        matches = [pid for pid in eligible.ids if verify_func(pid, c.attributes)]
+        matches = [
+            pid for pid in eligible.ids
+            if term_covered(pid) and verify_func(pid, c.attributes)
+        ]
         if len(matches) > 0:
             rupees = c.price_max.amount_minor / 100.0
             relaxations.append(Relaxation(
@@ -68,12 +87,13 @@ def analyze_relaxations(
             sort=c.sort,
         )
         eligible = product_repo.eligible_ids(c_no_attr)
-        if len(eligible.ids) > 0:
+        term_matched_ids = [pid for pid in eligible.ids if term_covered(pid)]
+        if len(term_matched_ids) > 0:
             attr_labels = ", ".join(f"{a.key}: {a.value}" if a.key else a.value for a in c.attributes)
             relaxations.append(Relaxation(
                 dropped="attribute",
                 label=f"Attribute {attr_labels}",
-                exact_match_count=len(eligible.ids),
+                exact_match_count=len(term_matched_ids),
             ))
 
     return relaxations

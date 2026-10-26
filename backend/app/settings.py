@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+import os
 import yaml
 
 
@@ -22,6 +23,15 @@ class ThresholdsConfig:
     top_k_display: int = 5
     clarify_max_options: int = 5
     price_under_is_inclusive: bool = False
+    spell_ratio: float = 0.85
+
+
+@dataclass(frozen=True)
+class AuthConfig:
+    database_path: str
+    session_ttl_seconds: int
+    csrf_ttl_seconds: int
+    cookie_secure: bool
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class Settings:
     codemix: dict[str, str]
     intent_cues: dict[str, list[str]]
     stopwords: frozenset[str]
+    auth: AuthConfig
 
 
 def load_settings(config_dir: Path | None = None) -> Settings:
@@ -99,6 +110,14 @@ def load_settings(config_dir: Path | None = None) -> Settings:
                 if w:
                     stopwords.add(w)
 
+    cors_raw = app_raw.get("cors", {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]})
+    configured_origins = os.getenv("TRUTHCART_CORS_ORIGINS")
+    if configured_origins is not None:
+        cors_raw = {**cors_raw, "origins": [origin.strip() for origin in configured_origins.split(",") if origin.strip()]}
+    cors_origins = cors_raw.get("origins", [])
+    if "*" in cors_origins:
+        raise ValueError("Credentialed CORS requires explicit origins; wildcard origins are not allowed")
+
     app_cfg = AppConfig(
         paths=app_raw.get("paths", {}),
         limits=app_raw.get("limits", {}),
@@ -106,7 +125,7 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         card_fields=app_raw.get("card_fields", ["price", "stock"]),
         citation=app_raw.get("citation", {}),
         policy=app_raw.get("policy", {}),
-        cors=app_raw.get("cors", {"origins": ["*"]}),
+        cors=cors_raw,
     )
 
     thresh_cfg = ThresholdsConfig(
@@ -115,6 +134,29 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         top_k_display=int(thresh_raw.get("top_k_display", 5)),
         clarify_max_options=int(thresh_raw.get("clarify_max_options", 5)),
         price_under_is_inclusive=bool(thresh_raw.get("price", {}).get("under_is_inclusive", False)),
+        spell_ratio=float(thresh_raw.get("spell_ratio", 0.85)),
+    )
+
+    auth_raw = app_raw.get("auth", {})
+    secure_raw = os.getenv("TRUTHCART_AUTH_COOKIE_SECURE")
+    cookie_secure = (
+        str(secure_raw).strip().lower() in {"1", "true", "yes", "on"}
+        if secure_raw is not None
+        else bool(auth_raw.get("cookie_secure", False))
+    )
+    if secure_raw is not None and str(secure_raw).strip().lower() not in {"0", "1", "false", "true", "no", "yes", "off", "on"}:
+        raise ValueError("TRUTHCART_AUTH_COOKIE_SECURE must be a boolean value")
+
+    session_ttl = int(os.getenv("TRUTHCART_AUTH_SESSION_TTL_SECONDS", auth_raw.get("session_ttl_seconds", 604800)))
+    csrf_ttl = int(os.getenv("TRUTHCART_AUTH_CSRF_TTL_SECONDS", auth_raw.get("csrf_ttl_seconds", 900)))
+    if session_ttl < 60 or csrf_ttl < 60:
+        raise ValueError("Authentication session and CSRF lifetimes must be at least 60 seconds")
+
+    auth_cfg = AuthConfig(
+        database_path=os.getenv("TRUTHCART_AUTH_DB_PATH", app_cfg.paths.get("auth_db", "data/build/truthcart_auth.sqlite")),
+        session_ttl_seconds=session_ttl,
+        csrf_ttl_seconds=csrf_ttl,
+        cookie_secure=cookie_secure,
     )
 
     return Settings(
@@ -128,4 +170,5 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         codemix=codemix,
         intent_cues=intent_cues,
         stopwords=frozenset(stopwords),
+        auth=auth_cfg,
     )

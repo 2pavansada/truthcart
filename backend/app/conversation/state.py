@@ -20,6 +20,8 @@ class ConversationState:
     constraints: ConstraintSet = field(default_factory=ConstraintSet)
     focus_product_id: str | None = None
     last_result_ids: tuple[str, ...] = ()
+    availability_context: str | None = None
+    availability_terms: tuple[str, ...] = ()
     pending: PendingClarification | None = None
     turn_no: int = 0
     updated_at: float = field(default_factory=time.time)

@@ -105,6 +105,10 @@ def plan_summary_claim(
 ) -> ClaimSpec:
     pid = product.product_id
     stock_val = product.stock_status.value if product.stock_status.value != "UNKNOWN" else None
+    evidence_ids = [f"prod:{pid}:price", f"prod:{pid}:stock", f"prod:{pid}:title"]
+    # Include rating evidence whenever the summary sentence may mention a rating (V-11).
+    if product.rating is not None:
+        evidence_ids.append(f"prod:{pid}:rating")
     return ClaimSpec(
         claim_id=claim_id,
         type=ClaimType.PRODUCT_SUMMARY,
@@ -116,5 +120,5 @@ def plan_summary_claim(
             "stock_status": stock_val,
             "rating": product.rating,
         },
-        evidence_ids=(f"prod:{pid}:price", f"prod:{pid}:stock", f"prod:{pid}:title"),
+        evidence_ids=tuple(evidence_ids),
     )

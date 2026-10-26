@@ -1,4 +1,5 @@
 import type {
+  AuthUser,
   ChatRequest,
   ChatResponse,
   HealthResponse,
@@ -83,4 +84,61 @@ export async function getPolicySection(sectionId: string): Promise<PolicySection
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE}/api/health`);
   return handleResponse<HealthResponse>(res);
+}
+
+async function getCsrfToken(): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await handleResponse<{ csrf_token: string }>(res);
+  return data.csrf_token;
+}
+
+async function authPost<T>(path: string, body?: Record<string, string>): Promise<T> {
+  const csrfToken = await getCsrfToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  return handleResponse<T>(res);
+}
+
+export async function getAuthMe(): Promise<AuthUser | null> {
+  const res = await fetch(`${API_BASE}/api/auth/me`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+  try {
+    return await handleResponse<AuthUser>(res);
+  } catch (error) {
+    if (error instanceof ApiClientError && error.code === "AUTH_REQUIRED") return null;
+    throw error;
+  }
+}
+
+export async function signupAccount(payload: {
+  name: string;
+  email: string;
+  password: string;
+}): Promise<AuthUser> {
+  return authPost<AuthUser>("/api/auth/signup", payload);
+}
+
+export async function loginAccount(payload: {
+  email: string;
+  password: string;
+}): Promise<AuthUser> {
+  return authPost<AuthUser>("/api/auth/login", payload);
+}
+
+export async function logoutAccount(): Promise<void> {
+  await authPost<{ logged_out: boolean }>("/api/auth/logout");
 }

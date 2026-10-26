@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Header } from "./components/Header";
+import { AuthPage } from "./components/AuthPage";
 import { ActiveConstraintsBar } from "./components/ActiveConstraintsBar";
 import { AnswerText } from "./components/AnswerText";
 import {
@@ -8,17 +9,21 @@ import {
   getProduct,
   getPolicySection,
   getHealth,
+  getAuthMe,
+  logoutAccount,
 } from "./api/client";
 import type {
+  AuthUser,
   ChatResponse,
   ConstraintView,
   ConstraintOpIn,
-  Evidence,
   ProductCard,
   ClarificationOption,
   ProductDetail,
   PolicySectionDetail,
 } from "./api/types";
+import { resolveSearchEvidence, type SearchEvidenceDrawerState } from "./utils/searchEvidence";
+import type { AuthMode } from "./utils/authValidation";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +39,7 @@ type DrawerContent =
   | { kind: "product"; data: ProductDetail }
   | { kind: "policy"; data: PolicySectionDetail }
   | { kind: "loading" }
+  | SearchEvidenceDrawerState
   | null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -90,9 +96,8 @@ const StockBadge: React.FC<{ status: string; label?: string }> = ({ status, labe
 
 const ProductCardItem: React.FC<{
   card: ProductCard;
-  evidence: Evidence[];
   onOpenProduct: (id: string) => void;
-}> = ({ card, evidence, onOpenProduct }) => {
+}> = ({ card, onOpenProduct }) => {
   // Find price & stock facts
   const priceFact = card.facts.find((f) => f.field === "price");
   const stockFact = card.facts.find((f) => f.field === "stock");
@@ -224,6 +229,14 @@ const EvidenceDrawer: React.FC<{
             </div>
           )}
 
+          {content.kind === "error" && (
+            <div className="evidence-load-error" role="alert">
+              <strong>Evidence could not be opened</strong>
+              <span>{content.message}</span>
+              <span>Close this panel and try the citation or product again.</span>
+            </div>
+          )}
+
           {content.kind === "product" && (
             <>
               <div className="evidence-field-card" style={{ borderColor: "var(--border-accent)" }}>
@@ -306,6 +319,77 @@ const EvidenceDrawer: React.FC<{
               </div>
             </>
           )}
+
+          {content.kind === "search" && (
+            <>
+              <div className="evidence-field-card">
+                <div className="field-name">Search ID</div>
+                <div className="field-value">{content.data.search_id}</div>
+              </div>
+              <div className="evidence-field-card">
+                <div className="field-name">Search Scope</div>
+                <div className="field-value">
+                  {content.data.scope === "CATALOGUE" ? "Product catalogue" : "Policy sections"}
+                </div>
+              </div>
+              <div className="evidence-field-card">
+                <div className="field-name">Search Completeness</div>
+                <div className="field-value">
+                  {content.data.completeness === "EXHAUSTIVE" ? "Complete scan" : "Incomplete scan"}
+                </div>
+              </div>
+
+              {content.data.scope === "CATALOGUE" ? (
+                <>
+                  <div className="evidence-field-card">
+                    <div className="field-name">Query</div>
+                    <div className="field-value">{content.data.query_text}</div>
+                  </div>
+                  <div className="evidence-field-card">
+                    <div className="field-name">Results</div>
+                    <div className="field-value">
+                      {content.data.exact_match_count} exact matches · {content.data.returned_count} returned
+                    </div>
+                  </div>
+                  {content.data.applied_constraints.length > 0 && (
+                    <div className="evidence-field-card">
+                      <div className="field-name">Applied Filters</div>
+                      <div className="field-value">
+                        {content.data.applied_constraints.map((constraint) => constraint.label).join(", ")}
+                      </div>
+                    </div>
+                  )}
+                  {content.data.incomplete_reasons.length > 0 && (
+                    <div className="evidence-field-card">
+                      <div className="field-name">Why the Search Is Incomplete</div>
+                      <div className="field-value">{content.data.incomplete_reasons.join(", ")}</div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="evidence-field-card">
+                    <div className="field-name">Query Terms</div>
+                    <div className="field-value">{content.data.query_terms.join(", ") || "—"}</div>
+                  </div>
+                  <div className="evidence-field-card">
+                    <div className="field-name">Sections Checked</div>
+                    <div className="field-value">{content.data.sections_checked.join(", ") || "—"}</div>
+                  </div>
+                  <div className="evidence-field-card">
+                    <div className="field-name">Matched Sections</div>
+                    <div className="field-value">{content.data.matched_section_ids.join(", ") || "—"}</div>
+                  </div>
+                  {content.data.incomplete_reasons.length > 0 && (
+                    <div className="evidence-field-card">
+                      <div className="field-name">Why the Search Is Incomplete</div>
+                      <div className="field-value">{content.data.incomplete_reasons.join(", ")}</div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -350,7 +434,11 @@ export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [constraints, setConstraints] = useState<ConstraintView[]>([]);
   const [drawer, setDrawer] = useState<DrawerContent>(null);
-  const [pendingClarificationId, setPendingClarificationId] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authView, setAuthView] = useState<AuthMode | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [, setPendingClarificationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -359,6 +447,21 @@ export default function App() {
     getHealth()
       .then(() => setIsReady(true))
       .catch(() => setIsReady(false));
+  }, []);
+
+  // The HttpOnly session cookie is never read by the frontend; /me restores account state.
+  useEffect(() => {
+    let active = true;
+    getAuthMe()
+      .then((user) => {
+        if (!active) return;
+        setAuthUser(user);
+        setAuthError(null);
+      })
+      .catch(() => {
+        if (active) setAuthError("Account status could not be checked. Guest shopping is still available.");
+      });
+    return () => { active = false; };
   }, []);
 
   // Scroll to bottom on new message
@@ -448,20 +551,30 @@ export default function App() {
     sendMessage("", ops);
   };
 
-  const handleOpenEvidence = async (kind: "product" | "policy" | "search", id: string) => {
+  const handleOpenEvidence = async (
+    kind: "product" | "policy" | "search",
+    id: string,
+    responseEvidence?: ChatResponse["evidence"],
+  ) => {
+    if (kind === "search") {
+      setDrawer(resolveSearchEvidence(responseEvidence, id));
+      return;
+    }
+
     setDrawer({ kind: "loading" });
     try {
       if (kind === "product") {
         const data = await getProduct(id);
         setDrawer({ kind: "product", data });
-      } else if (kind === "policy") {
+      } else {
         const data = await getPolicySection(id);
         setDrawer({ kind: "policy", data });
-      } else {
-        setDrawer(null);
       }
     } catch {
-      setDrawer(null);
+      setDrawer({
+        kind: "error",
+        message: "Check your connection and try opening this evidence again.",
+      });
     }
   };
 
@@ -473,12 +586,46 @@ export default function App() {
     setInput("");
   };
 
+  const handleLogout = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      await logoutAccount();
+      setAuthUser(null);
+    } catch {
+      setAuthError("Sign out could not be completed. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
   const charCount = input.length;
   const maxChars = 500;
 
   return (
     <div className="app-layout">
-      <Header onReset={handleReset} isReady={isReady} />
+      <Header
+        onReset={handleReset}
+        isReady={isReady}
+        authUser={authUser}
+        onSignIn={() => { setAuthError(null); setAuthView("login"); }}
+        onLogout={handleLogout}
+        authBusy={authBusy}
+        authError={authError}
+      />
+      {authView && (
+        <AuthPage
+          mode={authView}
+          onModeChange={setAuthView}
+          onAuthenticated={(user) => {
+            setAuthUser(user);
+            setAuthView(null);
+            setAuthError(null);
+          }}
+          onContinueAsGuest={() => setAuthView(null)}
+        />
+      )}
       <ActiveConstraintsBar constraints={constraints} onRemove={handleRemoveConstraint} />
 
       <div className="chat-container" role="log" aria-label="Conversation" aria-live="polite">
@@ -506,7 +653,10 @@ export default function App() {
                     <DecisionBadge decision={resp.decision} ms={resp.metrics?.total_ms} />
                   )}
 
-                  <AnswerText text={msg.text} onOpenEvidence={handleOpenEvidence} />
+                  <AnswerText
+                    text={msg.text}
+                    onOpenEvidence={(kind, id) => handleOpenEvidence(kind, id, resp?.evidence)}
+                  />
 
                   {resp?.products && resp.products.length > 0 && (
                     <div className="product-grid">
@@ -514,7 +664,6 @@ export default function App() {
                         <ProductCardItem
                           key={card.product_id}
                           card={card}
-                          evidence={resp.evidence}
                           onOpenProduct={(id) => handleOpenEvidence("product", id)}
                         />
                       ))}

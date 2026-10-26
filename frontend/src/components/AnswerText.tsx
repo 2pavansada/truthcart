@@ -13,7 +13,7 @@ export const AnswerText: React.FC<AnswerTextProps> = ({ text, onOpenEvidence }) 
 
   const elements: React.ReactNode[] = [];
   let lastIndex = 0;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = bracketRegex.exec(text)) !== null) {
     // Text before the bracket
@@ -41,7 +41,7 @@ export const AnswerText: React.FC<AnswerTextProps> = ({ text, onOpenEvidence }) 
 
       elements.push(
         <button
-          key={`chip-${match.index}-${idx}`}
+          key={`chip-${match!.index}-${idx}`}
           className="citation-chip"
           onClick={() => onOpenEvidence(kind, targetId)}
           title={`Click to inspect evidence for ${token}`}

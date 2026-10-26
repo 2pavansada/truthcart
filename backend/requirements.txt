@@ -19,6 +19,9 @@ pydantic==2.14.1
 # Configuration loader -- reads config/*.yaml
 PyYAML==6.0.3
 
+# Password hashing (Argon2id)
+pwdlib[argon2]==0.3.1
+
 # Test dependencies
 # httpx is required by fastapi.testclient (used in test_milestone.py and tests/).
 # Note: starlette 1.8.0 prefers httpx2; upgrade when starlette drops httpx support.

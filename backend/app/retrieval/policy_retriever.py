@@ -44,6 +44,14 @@ class PolicyRetriever:
 
         matched_ids = [s[0].section_id for s in matched_sections]
 
+        # Distinct topics that exist across all parsed sections (ordinal order).
+        available_topics: list[str] = []
+        seen_topics: set[str] = set()
+        for s in all_sections:
+            if s.topic and s.topic not in seen_topics:
+                seen_topics.add(s.topic)
+                available_topics.append(s.topic)
+
         manifest = PolicySearchManifest(
             search_id=f"p_{turn_id}",
             scope="POLICY",
@@ -61,4 +69,5 @@ class PolicyRetriever:
             manifest=manifest,
             sections=tuple(s[0] for s in matched_sections),
             established=established,
+            available_topics=tuple(available_topics),
         )

@@ -8,13 +8,14 @@
 - Answer shopper questions using only the supplied catalogue (5,000 products) and policy document.
 - Eliminate hallucinated prices, specs and policies; cite every factual claim.
 - Choose between ANSWER, CLARIFY and REFUSE by explicit, testable rules.
+- Offer optional local accounts while keeping ordinary shopping available to guests.
 - Run fully offline on a laptop with no paid services.
 - Be implementable by four people in seven days.
 
 **Non-goals**
 - Claims about the wider retailer's inventory, orders, payments, live stock, or anything outside the two source files.
 - Free-form product advice or subjective judgement ("best for me") beyond sorting on catalogue fields.
-- Authentication, user accounts, persistence of conversations across server restarts.
+- Persistence of conversational state across server restarts.
 
 ## 2. Core principle: facts come from code, words come from templates
 
@@ -44,7 +45,7 @@ Consequences:
 | Testing | pytest, FastAPI `TestClient`, optional Vitest + React Testing Library | As proposed. |
 | Deployment | One local process: uvicorn serving API and the built frontend (`frontend/dist`) | Offline demo needs no Node at runtime. |
 
-Explicitly **not** used: LangChain/LlamaIndex, cloud DBs, auth services, pandas (stdlib `csv`/`json` suffice), Redis, Docker (optional only).
+Optional local authentication uses Pwdlib's recommended Argon2id password hashing and a separate SQLite database for accounts, opaque hashed sessions, and one-use CSRF tokens. It does not gate guest shopping or add order/payment/admin features. Managed/cloud auth services are not used. Other explicitly **not** used components: LangChain/LlamaIndex, cloud DBs, pandas (stdlib `csv`/`json` suffice), Redis, Docker (optional only).
 
 ## 4. Diagrams
 
@@ -57,6 +58,8 @@ flowchart LR
   end
   subgraph Backend[FastAPI process]
     API[API routes]
+    AUTH[Account routes]
+    AUTHSTORE[AuthStore]
     ORCH[Orchestrator]
     NLP[Query understanding\nnormalize / intent / constraints]
     CONV[Conversation state\nmerge / pending clarification]
@@ -69,8 +72,9 @@ flowchart LR
     VAL[Validator]
     MET[Metrics recorder]
   end
-  subgraph Data[Local data - read only at runtime]
-    DB[(SQLite\nproducts, attributes, FTS5,\npolicy_sections)]
+  subgraph Data[Local stores]
+    DB[(Catalogue SQLite\nread-only at runtime\nproducts, attributes, FTS5, policy)]
+    AUTHDB[(Separate auth SQLite\nusers, hashed sessions, CSRF tokens)]
     VEC[(vectors.npy + vector_ids.json)]
     MAN[build_manifest.json]
   end
@@ -79,6 +83,7 @@ flowchart LR
     LLM[LLMAdapter]
   end
   UI -->|POST /api/chat| API --> ORCH
+  UI -->|/api/auth/*| API --> AUTH --> AUTHSTORE --> AUTHDB
   ORCH --> NLP --> CONV --> RET
   RET --> DB
   RET --> VEC

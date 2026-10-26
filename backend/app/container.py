@@ -61,7 +61,9 @@ def build_container(settings: Settings | None = None) -> Container:
     policy_repo = PolicyRepo(conn)
     vocab = product_repo.vocab()
     lexical = LexicalIndex(conn)
-    retriever = HybridRetriever(product_repo, lexical)
+    retriever = HybridRetriever(
+        product_repo, lexical, settings.thresholds.term_min_coverage
+    )
     policy_retriever = PolicyRetriever(policy_repo, settings.thresholds.policy_min_coverage)
     sessions = SessionStore(
         ttl_seconds=settings.app.limits.get("session_ttl_s", 1800),

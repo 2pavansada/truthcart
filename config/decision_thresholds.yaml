@@ -2,5 +2,6 @@ term_min_coverage: 0.67
 policy_min_coverage: 0.50
 top_k_display: 5
 clarify_max_options: 5
+spell_ratio: 0.85
 price:
   under_is_inclusive: false

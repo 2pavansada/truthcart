@@ -68,6 +68,9 @@ class PolicyResult:
     manifest: Any
     sections: tuple[PolicySection, ...] = ()
     established: bool = False
+    # Distinct, ordinal-ordered topics that exist across all parsed sections.
+    # Used by D-06 (AMBIGUOUS_POLICY_TOPIC) to offer clarification options.
+    available_topics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,7 +136,7 @@ class SegmentClaim:
 
 @dataclass(frozen=True)
 class SegmentNF:
-    kind: str  # NF-01..NF-14
+    kind: str  # NF template identifier
     params: dict[str, Any] = field(default_factory=dict)
 
 

@@ -28,7 +28,7 @@ def build_evidence(
             ev_id = f"search:{m.search_id}"
             bundle[ev_id] = SearchEvidence(evidence_id=ev_id, search=m)
 
-    # Collect all evidence IDs required by claims and options
+    # Collect all evidence IDs required by claims, options, and product cards
     needed_ids: set[str] = set()
     for claim in plan.claim_specs:
         needed_ids.update(claim.evidence_ids)
@@ -36,6 +36,15 @@ def build_evidence(
     if plan.clarification:
         for opt in plan.clarification.options:
             needed_ids.update(opt.evidence_ids)
+
+    # Card facts always cite title/price/stock — ensure they are in the bundle (V-02/V-10)
+    for card_spec in plan.card_specs:
+        pid = card_spec.product_id
+        needed_ids.update({
+            f"prod:{pid}:title",
+            f"prod:{pid}:price",
+            f"prod:{pid}:stock",
+        })
 
     for ev_id in needed_ids:
         if ev_id in bundle:

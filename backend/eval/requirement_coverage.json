@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "description": "Minimum reviewed branch inventory for decision requirements. Coverage is derived from current ordinary evaluation results and run-scoped pytest evidence; mappings alone are not evidence.",
+  "requirements": [
+    {"requirement_id":"D-01","branches":[
+      {"branch_id":"D-01.greeting-answer","required":true,"ordinary_cases":[{"case_id":"TC-D01-greeting","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-01.reset-answer","required":true,"ordinary_cases":[{"case_id":"TC-D01-reset","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-01.help-answer","required":true,"description":"HELP non-factual template response.","ordinary_cases":[{"case_id":"TC-D01-help","expected":{"decision":"ANSWER","validator_trips":0,"returned_products":[]}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-02","branches":[{"branch_id":"D-02.contradictory-constraints","required":true,"ordinary_cases":[{"case_id":"TC-D02-contradictory","expected":{"decision":"CLARIFY","reason":"CONTRADICTORY_CONSTRAINTS"}}],"fault_injection_tests":[]}],"known_limitations":[]},
+    {"requirement_id":"D-03","branches":[
+      {"branch_id":"D-03.unresolved-reference-no-history","required":true,"ordinary_cases":[{"case_id":"TC-D03-unresolved-reference","expected":{"decision":"CLARIFY","reason":"UNRESOLVED_REFERENCE"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-03.unresolved-reference-with-history","required":true,"description":"Unresolved reference offers prior result options when history exists.","ordinary_cases":[],"fault_injection_tests":[{"test_id":"FI-D03-unresolved-reference-with-history","expected_event":{"requirement_id":"D-03","branch_id":"D-03.unresolved-reference-with-history","outcome":"clarify-with-up-to-five-grounded-prior-result-options"}}]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-04","branches":[
+      {"branch_id":"D-04.under-specified-query","required":true,"ordinary_cases":[{"case_id":"TC-D04-under-specified","expected":{"decision":"CLARIFY","reason":"UNDER_SPECIFIED_QUERY"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-04.non-constraint-only-input","required":true,"description":"An around/about-only amount is not a hard constraint and requires clarification.","ordinary_cases":[],"fault_injection_tests":[{"test_id":"FI-D04-vague-price-not-a-constraint","expected_event":{"requirement_id":"D-04","branch_id":"D-04.non-constraint-only-input","outcome":"clarify-without-price-hard-filter"}}]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-05","branches":[
+      {"branch_id":"D-05.ambiguous-product-tie","required":true,"ordinary_cases":[{"case_id":"TC-D05-ambiguous-blue-running-shoe","expected":{"decision":"CLARIFY","reason":"AMBIGUOUS_PRODUCT"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-05.ambiguous-warranty-tie","required":true,"description":"Product warranty requested by entity text ties across multiple candidates.","ordinary_cases":[],"fault_injection_tests":[{"test_id":"FI-D05-ambiguous-warranty-tie","expected_event":{"requirement_id":"D-05","branch_id":"D-05.ambiguous-warranty-tie","outcome":"clarify-with-grounded-options-no-warranty-claim-no-cards"}}]}
+    ],"known_limitations":["Tie cases with different candidate counts are not separately inventoried."]},
+    {"requirement_id":"D-06","branches":[{"branch_id":"D-06.ambiguous-policy-topic","required":true,"ordinary_cases":[{"case_id":"TC-D06-ambiguous-policy-topic","expected":{"decision":"CLARIFY","reason":"AMBIGUOUS_POLICY_TOPIC"}}],"fault_injection_tests":[]}],"known_limitations":[]},
+    {"requirement_id":"D-07","branches":[
+      {"branch_id":"D-07.unknown-explicit-id","required":true,"ordinary_cases":[{"case_id":"TC-D07-unknown-explicit-id","expected":{"decision":"REFUSE","reason":"NO_CATALOGUE_MATCH","validator_trips":0}}],"fault_injection_tests":[]},
+      {"branch_id":"D-07.entity-resolution-none","required":true,"ordinary_cases":[{"case_id":"TC-D07-entity-resolution-none","expected":{"decision":"REFUSE","reason":"NO_CATALOGUE_MATCH","validator_trips":0}}],"fault_injection_tests":[]},
+      {"branch_id":"D-07.existence-no-title-or-attribute-match","required":true,"ordinary_cases":[{"case_id":"TC-D07-catalogue-absence","expected":{"decision":"REFUSE","reason":"NO_CATALOGUE_MATCH"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-07.search-zero-verified","required":true,"ordinary_cases":[{"case_id":"TC-D07-search-zero-verified","expected":{"decision":"REFUSE","reason":"NO_CATALOGUE_MATCH","validator_trips":0}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-08","branches":[
+      {"branch_id":"D-08.all-requested-fields-missing","required":true,"ordinary_cases":[{"case_id":"TC-D08-field-missing-unknown-stock","expected":{"decision":"REFUSE","reason":"FIELD_MISSING"}},{"case_id":"TC-D08-null-price","expected":{"decision":"REFUSE","reason":"FIELD_MISSING"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-08b.partial-fields-missing","required":true,"ordinary_cases":[{"case_id":"TC-D08b-partial-fields","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-09","branches":[{"branch_id":"D-09.policy-not-established","required":true,"ordinary_cases":[{"case_id":"TC-D09-policy-not-established","expected":{"decision":"REFUSE","reason":"POLICY_NOT_ESTABLISHED"}}],"fault_injection_tests":[]}],"known_limitations":[]},
+    {"requirement_id":"D-10","branches":[
+      {"branch_id":"D-10.product-warranty-supported","required":true,"ordinary_cases":[{"case_id":"TC-D10-warranty-grounded","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-10.product-warranty-silent","required":true,"ordinary_cases":[{"case_id":"TC-D10-warranty-silent","expected":{"decision":"REFUSE","reason":"FIELD_MISSING"}}],"fault_injection_tests":[]}
+    ],"known_limitations":["The optional general-policy quotation on a product-specific warranty refusal is not required and is not implemented."]},
+    {"requirement_id":"D-11","branches":[
+      {"branch_id":"D-11.track-order","required":true,"ordinary_cases":[{"case_id":"TC-D11-out-of-scope","expected":{"decision":"REFUSE","reason":"OUT_OF_SCOPE"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-11.order-action","required":true,"description":"Request to place an order is unsupported.","ordinary_cases":[{"case_id":"TC-D11-order-action","expected":{"decision":"REFUSE","reason":"UNSUPPORTED_REQUEST"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-11.payment-action","required":true,"description":"Request to pay/process a payment is unsupported.","ordinary_cases":[{"case_id":"TC-D11-payment-action","expected":{"decision":"REFUSE","reason":"UNSUPPORTED_REQUEST"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-11.cancel-action","required":true,"description":"Request to cancel an order is unsupported.","ordinary_cases":[{"case_id":"TC-D11-cancel-action","expected":{"decision":"REFUSE","reason":"UNSUPPORTED_REQUEST"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-11.personalized-advice","required":true,"description":"Personalized advice request is unsupported.","ordinary_cases":[{"case_id":"TC-D11-personalized-advice","expected":{"decision":"REFUSE","reason":"UNSUPPORTED_REQUEST"}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-12","branches":[{"branch_id":"D-12.validator-rejection-refusal","required":true,"ordinary_cases":[{"case_id":"TC-D12-validator-reject","role":"ordinary-gap","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[{"test_id":"FI-D12-validator-rejection","expected_event":{"requirement_id":"D-12","branch_id":"D-12.validator-rejection-refusal","outcome":"fact-free-refusal-trip-once"}}]}],"known_limitations":["The ordinary query is expected to answer without a validator trip and does not exercise rejection; the injected test is intentionally outside G-AC-03."]},
+    {"requirement_id":"D-13","branches":[
+      {"branch_id":"D-13.single-field-available","required":true,"ordinary_cases":[{"case_id":"TC-D13-price-lookup","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-13.multiple-fields-available","required":true,"ordinary_cases":[{"case_id":"TC-D13-multi-field","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-14","branches":[
+      {"branch_id":"D-14.title-or-attribute-match","required":true,"ordinary_cases":[{"case_id":"TC-D14-unique-existence-match","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-14.description-only-match","required":true,"ordinary_cases":[{"case_id":"TC-D14-existence-desc-only","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-15","branches":[
+      {"branch_id":"D-15.constrained-search","required":true,"ordinary_cases":[{"case_id":"TC-D15-budget-search","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]},
+      {"branch_id":"D-15.multiturn-constraint-carryover","required":true,"ordinary_cases":[{"case_id":"TC-D15-budget-stock-carryover","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]}
+    ],"known_limitations":[]},
+    {"requirement_id":"D-16","branches":[{"branch_id":"D-16.covered-policy-answer","required":true,"ordinary_cases":[{"case_id":"TC-D16-policy-answer","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[]}],"known_limitations":[]},
+    {"requirement_id":"D-17","branches":[
+      {"branch_id":"D-17.all-claims-unusable-refusal","required":true,"ordinary_cases":[{"case_id":"TC-D17-insufficient-evidence","role":"ordinary-gap","expected":{"decision":"ANSWER"}}],"fault_injection_tests":[{"test_id":"FI-D17-all-claims-unusable","expected_event":{"requirement_id":"D-17","branch_id":"D-17.all-claims-unusable-refusal","outcome":"fact-free-insufficient-evidence-refusal"}}]},
+      {"branch_id":"D-17.missing-value","required":true,"description":"Claims with a value of null are dropped by the grounding post-condition.","ordinary_cases":[],"fault_injection_tests":[{"test_id":"FI-D17-null-value-claims","expected_event":{"requirement_id":"D-17","branch_id":"D-17.missing-value","outcome":"fact-free-insufficient-evidence-refusal"}}]},
+      {"branch_id":"D-17.mixed-valid-invalid-claims","required":true,"description":"Invalid claims and their unsupported product cards are dropped while remaining grounded claims and associated cards are preserved.","ordinary_cases":[],"fault_injection_tests":[{"test_id":"FI-D17-mixed-claim-card-filter","expected_event":{"requirement_id":"D-17","branch_id":"D-17.mixed-valid-invalid-claims","outcome":"invalid-claim-and-card-removed-valid-claim-and-card-preserved"}}]}
+    ],"known_limitations":["The ordinary query plans grounded claims and does not exercise D-17; post-condition branches are covered only by deterministic fault-injection tests."]}
+  ]
+}

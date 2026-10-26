@@ -1,6 +1,7 @@
-from typing import Sequence
+from typing import Any, Sequence
 from app.domain.constraints import ConstraintOp, ConstraintSet
 from app.domain.enums import CardOrigin, Completeness, Intent, OpKind
+from app.retrieval.lexical import LexicalError
 from app.domain.plans import (
     Candidate,
     EntityResolution,
@@ -18,9 +19,15 @@ from app.store.product_repo import ProductRepo
 
 
 class HybridRetriever:
-    def __init__(self, product_repo: ProductRepo, lexical_index: LexicalIndex):
+    def __init__(
+        self,
+        product_repo: ProductRepo,
+        lexical_index: LexicalIndex,
+        term_min_coverage: float = 0.67,
+    ):
         self.product_repo = product_repo
         self.lexical_index = lexical_index
+        self.term_min_coverage = term_min_coverage
 
     def _constraints_to_views(self, c: ConstraintSet) -> list[ConstraintView]:
         views = []
@@ -72,8 +79,8 @@ class HybridRetriever:
         # 1. SQL hard filters over all rows
         eligible = self.product_repo.eligible_ids(c)
 
-        # 2. Attribute verification for every eligible row
-        exact_ids = []
+        # 2. Attribute verification for every hard-filter-eligible row
+        attribute_verified_ids = []
         candidate_matches: dict[str, Any] = {}
         products_map = self.product_repo.get_many(eligible.ids)
 
@@ -84,26 +91,53 @@ class HybridRetriever:
             attrs = self.product_repo.attributes(pid)
             res = verify_attributes(prod, attrs, c.attributes)
             if res.ok:
-                exact_ids.append(pid)
+                attribute_verified_ids.append(pid)
                 candidate_matches[pid] = res.matches
 
-        # 3. Lexical terms matching if terms exist
-        terms = list(c.terms) or list(spec.entity_terms)
-        if terms and exact_ids:
-            # Rank exact matches by BM25
-            ranked_scores = self.lexical_index.rank(terms, frozenset(exact_ids), k=spec.top_k)
-        else:
-            # Deterministic order by pid
+        # 3. Lexical coverage defines query membership; ranking only orders it.
+        terms = list(dict.fromkeys((*c.terms, *spec.entity_terms)))
+        completeness = Completeness.EXHAUSTIVE
+        incomplete_reasons: list[str] = []
+        term_coverage: dict[str, float] = {}
+        term_hits = None
+        exact_ids = list(attribute_verified_ids)
+        if terms:
+            try:
+                term_hits = self.lexical_index.match_terms(terms)
+                for pid in exact_ids:
+                    coverage = sum(pid in term_hits.get(term, frozenset()) for term in terms) / len(terms)
+                    term_coverage[pid] = coverage
+                exact_ids = [
+                    pid for pid in exact_ids
+                    if term_coverage[pid] >= self.term_min_coverage
+                ]
+            except LexicalError:
+                completeness = Completeness.INCOMPLETE
+                incomplete_reasons.append("LEXICAL_BACKEND_ERROR")
+                # A failed membership check cannot admit candidates on hard filters alone.
+                exact_ids = []
+
+        try:
+            if terms and exact_ids:
+                ranked_scores = self.lexical_index.rank(terms, frozenset(exact_ids), k=spec.top_k)
+            else:
+                ranked_scores = [(pid, 1.0) for pid in sorted(exact_ids)[:spec.top_k]]
+        except LexicalError:
+            completeness = Completeness.INCOMPLETE
+            if "LEXICAL_BACKEND_ERROR" not in incomplete_reasons:
+                incomplete_reasons.append("LEXICAL_BACKEND_ERROR")
             ranked_scores = [(pid, 1.0) for pid in sorted(exact_ids)[:spec.top_k]]
 
         ranked_candidates = []
         for pid, score in ranked_scores:
+            if pid not in exact_ids:
+                continue
             prod = products_map[pid]
             # Match location check
             loc = "TITLE_OR_ATTR"
             ranked_candidates.append(Candidate(
                 product_id=pid,
-                term_coverage=1.0,
+                term_coverage=term_coverage.get(pid, 1.0),
                 match_location=loc,
                 fused_score=score,
                 attr_matches=candidate_matches.get(pid, ()),
@@ -111,14 +145,21 @@ class HybridRetriever:
 
         # 4. Relaxations analysis if exact matches are 0
         relaxations = []
-        if len(exact_ids) == 0:
+        if len(exact_ids) == 0 and completeness == Completeness.EXHAUSTIVE:
             def check_verify(p_id, atts):
                 p = self.product_repo.get(p_id)
                 if not p:
                     return False
                 return verify_attributes(p, self.product_repo.attributes(p_id), atts).ok
 
-            relaxations = analyze_relaxations(spec, self.product_repo, check_verify)
+            relaxations = analyze_relaxations(
+                spec,
+                self.product_repo,
+                check_verify,
+                terms=terms,
+                term_hits=term_hits,
+                term_min_coverage=self.term_min_coverage,
+            )
 
         manifest = CatalogueSearchManifest(
             search_id=f"s_{turn_id}",
@@ -128,16 +169,16 @@ class HybridRetriever:
             lookup_ids=[],
             applied_constraints=self._constraints_to_views(c),
             term_requirements=terms,
-            term_min_coverage=0.67,
-            completeness=Completeness.EXHAUSTIVE,
-            incomplete_reasons=[],
+            term_min_coverage=self.term_min_coverage,
+            completeness=completeness,
+            incomplete_reasons=incomplete_reasons,
             eligible_count=len(eligible.ids),
             exact_match_count=len(exact_ids),
             tied_count=None,
             returned_count=len(ranked_candidates),
             excluded_unknown_stock=eligible.excluded_unknown_stock,
             relaxations=relaxations,
-            ranking={"lexical": True, "semantic": False},
+            ranking={"lexical": bool(terms), "semantic": False},
             related_count=0,
         )
 

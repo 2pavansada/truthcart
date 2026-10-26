@@ -1,6 +1,6 @@
 # API_SPEC.md — HTTP API
 
-> Design specification. Nothing is implemented. **All product titles, IDs, prices and policy text in examples are ILLUSTRATIVE placeholders, not catalogue data.** Product ID format and currency handling are unconfirmed (UNK-02, UNK-05); IDs are assumed to match a configurable `product_id_regex` that must **not** allow the `:` character (evidence IDs use `:` as a separator).
+> API contract. **All product titles, IDs, prices and policy text in examples are ILLUSTRATIVE placeholders, not catalogue data.** Product ID format and currency handling are unconfirmed (UNK-02, UNK-05); IDs are assumed to match a configurable `product_id_regex` that must **not** allow the `:` character (evidence IDs use `:` as a separator).
 
 ## 1. Conventions
 
@@ -14,6 +14,11 @@
 
 | Method | Path | Purpose | Auth |
 |---|---|---|---|
+| GET | `/api/auth/csrf` | Issue a one-use CSRF token for browser auth requests | same-origin browser |
+| POST | `/api/auth/signup` | Create an optional local account and session | CSRF + cookie |
+| POST | `/api/auth/login` | Start an account session | CSRF + cookie |
+| POST | `/api/auth/logout` | Revoke the current account session | CSRF + cookie |
+| GET | `/api/auth/me` | Restore the current account from its session cookie | session cookie |
 | POST | `/api/chat` | One conversational turn | none |
 | POST | `/api/session/reset` | Clear a session's constraints and context | none |
 | GET | `/api/products/{product_id}` | Full product record (evidence drawer, direct lookup) | none |
@@ -26,7 +31,17 @@
 | POST | `/api/eval/run` | Run an evaluation suite (flag-gated) | none (local only) |
 | GET | `/api/eval/runs/{run_id}` | Evaluation run status/result | none |
 
-No authentication: the app is local and offline. Eval routes are disabled unless `app.yaml: eval.enabled: true`, and then respond only to `127.0.0.1`.
+Shopping, product, policy, and chat endpoints remain available to guests. Optional local accounts use the separate auth SQLite database; they do not grant additional shopping, order, payment, or administrative capabilities. Eval routes are disabled unless `app.yaml: eval.enabled: true`, and then respond only to `127.0.0.1`.
+
+### 2.1 Optional account authentication
+
+- Signup accepts a trimmed name (1–80 characters), normalized email, and password (12–128 characters). Email addresses are trimmed and case-folded before the unique constraint is checked.
+- Login accepts a password up to 128 characters. Invalid credentials always return `401 INVALID_CREDENTIALS` with the same message whether the account is unknown or the password is wrong. Signup conflicts return `409 ACCOUNT_NOT_CREATED`.
+- The backend stores Argon2id password hashes, never plaintext passwords. Random opaque session tokens are sent only in `HttpOnly; SameSite=Lax` cookies; only SHA-256 token hashes are stored. Sessions expire according to `TRUTHCART_AUTH_SESSION_TTL_SECONDS` (default 604800 seconds).
+- Browser POST requests to signup, login, and logout require a same-origin request plus a matching CSRF cookie and `X-CSRF-Token` header. If `Origin` is present it must exactly match the request or an allowed origin; when a browser omits it, same-origin Fetch Metadata or an allowed Referer is required. Tokens are one-use and expire according to `TRUTHCART_AUTH_CSRF_TTL_SECONDS` (default 900 seconds). The CSRF-token GET uses the same origin validation, including the same-origin browser fallback.
+- Cookies are `Secure` on HTTPS requests or when `TRUTHCART_AUTH_COOKIE_SECURE=true`. Local HTTP development defaults to insecure cookies. Configure `TRUTHCART_CORS_ORIGINS` with explicit browser origins; wildcard origins are rejected because credentialed CORS is enabled.
+- `TRUTHCART_AUTH_DB_PATH` overrides the separate auth database path. The default is `data/build/truthcart_auth.sqlite`.
+- Account authentication is optional; ordinary guest shopping does not require a session.
 
 ## 3. Error envelope and codes
 
@@ -36,14 +51,18 @@ No authentication: the app is local and offline. Eval routes are disabled unless
 
 | HTTP | code | When |
 |---|---|---|
-| 422 | `VALIDATION_ERROR` | Schema violation, unknown field, bad `session_id`, empty message without ops/resolution, `ids` > 20 |
+| 422 | `VALIDATION_ERROR` | Schema violation, unknown field, bad `session_id`, empty message without ops/resolution, `ids` > 20, malformed auth input |
 | 400 | `INVALID_CONSTRAINT_OP` | `constraint_ops` has an unsupported key/value combination |
 | 400 | `INVALID_RESOLUTION` | `resolution.clarification_id` is unknown/expired, or `option_id` not in that clarification |
+| 401 | `INVALID_CREDENTIALS` | Login failed; message is identical for unknown email and wrong password |
+| 401 | `AUTH_REQUIRED` | No valid account session for `/api/auth/me` |
+| 403 | `CSRF_VALIDATION_FAILED` | Auth request has missing/invalid Origin or CSRF token |
 | 404 | `PRODUCT_NOT_FOUND` | Unknown `product_id` in product endpoints |
 | 404 | `POLICY_SECTION_NOT_FOUND` | Unknown section |
 | 404 | `EVAL_RUN_NOT_FOUND` | Unknown run |
 | 403 | `EVAL_DISABLED` | Eval endpoints used while disabled |
 | 409 | `EVAL_RUN_IN_PROGRESS` | Another run is active |
+| 409 | `ACCOUNT_NOT_CREATED` | Signup conflicts with an existing normalized email |
 | 503 | `INDEX_NOT_READY` | DB/manifest/policy missing or manifest mismatch |
 | 500 | `INTERNAL_ERROR` | Unhandled exception (details omitted, `request_id` logged) |
 

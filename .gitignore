@@ -32,6 +32,14 @@ data/build/
 *.sqlite3
 *.db
 
+# --- Generated evaluation reports -------------------------------------------
+# Regenerate with `python -m eval.runner` from backend/; timestamped per run.
+backend/data/reports/
+
+# --- Qoder IDE artefacts -----------------------------------------------------
+# Locally generated repo wiki/knowledge; not part of the application source.
+.qoder/
+
 # --- Node.js -----------------------------------------------------------------
 node_modules/
 frontend/dist/

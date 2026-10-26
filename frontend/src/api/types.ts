@@ -1,5 +1,11 @@
 export type Decision = "ANSWER" | "CLARIFY" | "REFUSE";
 export type StockStatus = "IN_STOCK" | "OUT_OF_STOCK" | "UNKNOWN";
+
+export interface AuthUser {
+  user_id: string;
+  name: string;
+  email: string;
+}
 export type ClaimType =
   | "PRODUCT_EXISTS"
   | "PRICE"
@@ -96,10 +102,48 @@ export interface PolicyEvidence {
   excerpt: string;
 }
 
+export type SearchCompleteness = "EXHAUSTIVE" | "INCOMPLETE";
+
+export interface CatalogueSearchManifest {
+  search_id: string;
+  scope: "CATALOGUE";
+  intent: string;
+  query_text: string;
+  lookup_ids: string[];
+  applied_constraints: ConstraintView[];
+  term_requirements: string[];
+  term_min_coverage: number;
+  completeness: SearchCompleteness;
+  incomplete_reasons: string[];
+  eligible_count: number;
+  exact_match_count: number;
+  tied_count: number | null;
+  returned_count: number;
+  excluded_unknown_stock: number;
+  relaxations: Array<{ dropped: string; label: string; exact_match_count: number }>;
+  ranking: Record<string, boolean>;
+  related_count: number;
+}
+
+export interface PolicySearchManifest {
+  search_id: string;
+  scope: "POLICY";
+  query_terms: string[];
+  topic: string | null;
+  sections_checked: string[];
+  min_coverage: number;
+  best_coverage: number | null;
+  matched_section_ids: string[];
+  completeness: SearchCompleteness;
+  incomplete_reasons: string[];
+}
+
+export type SearchManifest = CatalogueSearchManifest | PolicySearchManifest;
+
 export interface SearchEvidence {
   evidence_id: string;
   kind: "SEARCH_MANIFEST";
-  search: any;
+  search: SearchManifest;
 }
 
 export type Evidence = ProductFieldEvidence | PolicyEvidence | SearchEvidence;
